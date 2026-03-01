@@ -15,11 +15,12 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { PieChart } from "react-native-chart-kit";
 import Svg, { Circle, G } from "react-native-svg";
-import { fetchData } from "../api/dataService";
+import { fetchFastDeviceStatus } from "../api/dataService";
 import { buildHealthSummary } from "../utils/deviceHealth";
 import { navigateToTabRoute } from "../navigation/navHelpers";
 
 const AUTO_REFRESH_MS = 1000;
+const STATUS_FETCH_TIMEOUT_MS = 5000;
 const COLORS = {
   total: "#0EA5E9", // blue
   good: "#16A34A", // green
@@ -128,7 +129,7 @@ export default function DashboardScreen(props) {
         if (mode === "initial") setLoading(true);
         if (mode === "refresh") setRefreshing(true);
         if (mode === "initial") setError("");
-        const data = await fetchData();
+        const data = await fetchFastDeviceStatus({ timeoutMs: STATUS_FETCH_TIMEOUT_MS });
         setItems(Array.isArray(data) ? data : []);
         setError("");
       } catch (e) {

@@ -156,25 +156,9 @@ export default function ExportScreen({ navigation: navigationProp, route }) {
     });
   };
   // State for Date Selection
-  const getToday = () => {
-    const d = new Date();
-    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
-  };
+  const formatDate = (date) =>
+    `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`;
 
-  const getSevenDaysAgo = () => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
-  };
-
-  const [startDate, setStartDate] = useState(getSevenDaysAgo());
-  const [endDate, setEndDate] = useState(getToday());
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
-  const [currentField, setCurrentField] = useState(null);
-
-  // Helper: Parse DD-MM-YYYY to Timestamp
   const parseDateToTs = (dateStr, isEndOfDay = false) => {
     if (!dateStr) return 0;
     const [day, month, year] = dateStr.split('-').map(Number);
@@ -183,6 +167,23 @@ export default function ExportScreen({ navigation: navigationProp, route }) {
     else date.setHours(0, 0, 0, 0);
     return date.getTime();
   };
+
+  const getToday = () => {
+    return formatDate(new Date());
+  };
+
+  const getSevenDaysAgo = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return formatDate(d);
+  };
+
+  const [startDate, setStartDate] = useState(getSevenDaysAgo());
+  const [endDate, setEndDate] = useState(getToday());
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [currentField, setCurrentField] = useState(null);
 
 const [previewRows, setPreviewRows] = useState([]);
 const [previewMetricKeys, setPreviewMetricKeys] = useState([]);
@@ -208,6 +209,10 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
       // 1. Resolve filter window
       const startTs = parseDateToTs(startDate, false);
       const endTs = parseDateToTs(endDate, true);
+      if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || startTs > endTs) {
+        Alert.alert("Invalid Range", "Please select a valid start and end date range.");
+        return;
+      }
 
       // 2. Fetch all IoTReadings pages (if backend exposes pagination)
       const { IoTReadings, _meta: fetchMeta } = await fetchAllIoTReadings({
@@ -400,16 +405,9 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
   const onDateChange = (event, selectedDate) => {
     setShowPicker(false);
     if (selectedDate) {
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const year = selectedDate.getFullYear();
-      const formatted = `${day}-${month}-${year}`;
-
-      if (currentField === "start") {
-        setStartDate(formatted);
-      } else if (currentField === "end") {
-        setEndDate(formatted);
-      }
+      const formatted = formatDate(selectedDate);
+      if (currentField === "startDate" || currentField === "start") setStartDate(formatted);
+      else if (currentField === "endDate" || currentField === "end") setEndDate(formatted);
     }
   };
 
@@ -444,7 +442,7 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
                 value={startDate}
                 onChangeText={setStartDate}
               />
-              <TouchableOpacity onPress={() => showDatePicker("start")}>
+              <TouchableOpacity onPress={() => showDatePicker("startDate")}>
                 <Image
                   source={require("../../assets/images/Calender.png")}
                   style={styles.calendarIcon}
@@ -463,7 +461,7 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
                 value={endDate}
                 onChangeText={setEndDate}
               />
-              <TouchableOpacity onPress={() => showDatePicker("end")}>
+              <TouchableOpacity onPress={() => showDatePicker("endDate")}>
                 <Image
                   source={require("../../assets/images/Calender.png")}
                   style={styles.calendarIcon}

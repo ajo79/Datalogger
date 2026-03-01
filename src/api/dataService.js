@@ -5,13 +5,23 @@
  * It includes robust error handling, timeouts, and response normalization.
  *
  * Key Features:
- * - Fetch with AbortController for timeouts (60s).
+ * - Fetch with AbortController and configurable timeouts.
  * - Safe JSON parsing to prevent crashes on malformed responses.
  * - Lambda Proxy response normalization (handling "body" string vs direct JSON).
  */
 
 const API_URL = "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com";
 const DASHBOARD_PATH = "/prod"; // change only if your stage/path differs
+const DEFAULT_FETCH_TIMEOUT_MS = 60000;
+const FAST_STATUS_TIMEOUT_MS = 5000;
+
+function normalizeTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
+  const n = Number(timeoutMs);
+  if (Number.isFinite(n) && n > 0) {
+    return Math.max(1000, Math.round(n));
+  }
+  return fallbackMs;
+}
 
 function toQueryValue(value) {
   if (value == null) return undefined;
@@ -113,11 +123,13 @@ function extractIoTReadingsHasMore(json) {
 /**
  * Fetches text content from a URL with a strictly enforced timeout.
  * @param {string} url - The endpoint URL
+ * @param {{ timeoutMs?: number }} options
  * @returns {Promise<string>} - The raw text response
  */
-async function fetchText(url) {
+async function fetchText(url, options = {}) {
+  const timeoutMs = normalizeTimeoutMs(options?.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds timeout
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(url, {
@@ -605,14 +617,25 @@ function readingIdentity(item) {
   return `${deviceId}|${tsServer ?? ""}|${tsDevice ?? ""}|${msgType}|${parameterCount}`;
 }
 
+function buildMergedBiotData({ RealTimeDataMonitor, IoTReadings }) {
+  const { mergedRealtime, readingOnly } = mergeRealtimeAndReadings(RealTimeDataMonitor, IoTReadings);
+  const filteredRealtime = mergedRealtime.filter((item) => item?._schemaValid);
+  const filteredReadings = readingOnly.filter((item) => item?._schemaValid);
+  if (filteredRealtime.length || filteredReadings.length) {
+    return [...filteredRealtime, ...filteredReadings];
+  }
+  return [];
+}
+
 /**
  * Main function to fetch dashboard data.
  * Returns normalized object containing IoTReadings and RealTimeDataMonitor.
  */
 export async function fetchDashboardData(options = {}) {
   const query = options?.query && typeof options.query === "object" ? options.query : {};
+  const timeoutMs = normalizeTimeoutMs(options?.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS);
   const url = buildApiUrl(DASHBOARD_PATH, query);
-  const text = await fetchText(url);
+  const text = await fetchText(url, { timeoutMs });
   const outer = safeJsonParse(text);
 
   if (!outer) {
@@ -764,8 +787,8 @@ export async function fetchAllIoTReadings({
  * Helper to get only RealTimeDataMonitor array.
  * This is the primary data source for the HomeScreen cards.
  */
-export async function fetchRealTimeDataMonitor() {
-  const { RealTimeDataMonitor, IoTReadings } = await fetchDashboardData();
+export async function fetchRealTimeDataMonitor(options = {}) {
+  const { RealTimeDataMonitor, IoTReadings } = await fetchDashboardData(options);
   const { mergedRealtime } = mergeRealtimeAndReadings(RealTimeDataMonitor, IoTReadings);
   return mergedRealtime.filter((item) => item?._schemaValid);
 }
@@ -774,22 +797,34 @@ export async function fetchRealTimeDataMonitor() {
  * Generic data fetcher used by list-style views (Home/Data screens).
  * Prefers real-time monitor data and falls back to IoTReadings if needed.
  */
-export async function fetchData() {
-  const { RealTimeDataMonitor, IoTReadings } = await fetchDashboardData();
-  const { mergedRealtime, readingOnly } = mergeRealtimeAndReadings(RealTimeDataMonitor, IoTReadings);
-  const filteredRealtime = mergedRealtime.filter((item) => item?._schemaValid);
-  const filteredReadings = readingOnly.filter((item) => item?._schemaValid);
-  if (filteredRealtime.length || filteredReadings.length) {
-    return [...filteredRealtime, ...filteredReadings];
+export async function fetchData(options = {}) {
+  const data = await fetchDashboardData(options);
+  return buildMergedBiotData(data);
+}
+
+/**
+ * Fast status fetch path for Home/Dashboard.
+ * Tries lightweight backend query first with a short timeout and falls back to normal fetch on failure.
+ */
+export async function fetchFastDeviceStatus(options = {}) {
+  const timeoutMs = normalizeTimeoutMs(options?.timeoutMs, FAST_STATUS_TIMEOUT_MS);
+  try {
+    const data = await fetchDashboardData({
+      query: { statusOnly: "1" },
+      timeoutMs,
+    });
+    return buildMergedBiotData(data);
+  } catch (error) {
+    console.warn("[dataService] fast status fetch failed, falling back:", error?.message || error);
+    return fetchData({ timeoutMs });
   }
-  return [];
 }
 
 /**
  * Helper to get ESP32 alarm entries.
  * Each entry is already normalized (payload flattened, numbers coerced, ts derived from timestamp field).
  */
-export async function fetchESP32Alarms() {
-  const { ESP32_Alarms } = await fetchDashboardData();
+export async function fetchESP32Alarms(options = {}) {
+  const { ESP32_Alarms } = await fetchDashboardData(options);
   return ESP32_Alarms;
 }

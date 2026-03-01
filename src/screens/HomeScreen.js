@@ -15,7 +15,7 @@ import {
   SafeAreaView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { fetchData } from "../api/dataService";
+import { fetchFastDeviceStatus } from "../api/dataService";
 import { classifyDeviceHealth, buildHealthSummary } from "../utils/deviceHealth";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { navigateToTabRoute } from "../navigation/navHelpers";
@@ -24,6 +24,7 @@ import { navigateToTabRoute } from "../navigation/navHelpers";
 
 // Auto refresh interval (ms). Set to 0 to disable.
 const AUTO_REFRESH_MS = 1000;
+const STATUS_FETCH_TIMEOUT_MS = 5000;
 
 const FILTER_LABELS = {
   all: "All Devices",
@@ -301,7 +302,7 @@ export default function HomeScreen(props) {
 
       if (mode === "initial") setError("");
       // API Call to fetch real-time monitor data
-      const data = await fetchData();
+      const data = await fetchFastDeviceStatus({ timeoutMs: STATUS_FETCH_TIMEOUT_MS });
       setRawItems(Array.isArray(data) ? data : []);
       setError("");
     } catch (e) {

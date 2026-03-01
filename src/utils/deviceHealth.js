@@ -8,8 +8,10 @@
  */
 
 // If a reading is older than this, mark device offline.
-// Default widened to 60s to absorb network jitter and API delays.
+// Reduced to improve online/offline detection responsiveness.
 export const OFFLINE_AFTER_MS = 60000; // 60 seconds
+const MIN_OFFLINE_AFTER_MS = 30000;
+const MAX_OFFLINE_AFTER_MS = 180000;
 
 // Merge payload onto the item (without mutating) for defensive checks.
 function withPayload(item) {
@@ -66,7 +68,7 @@ function resolveOfflineAfterMs(item, fallbackMs) {
       merged?.reportingIntervalMs
   );
   if (Number.isFinite(intervalMs) && intervalMs > 0) {
-    return Math.max(fallbackMs, intervalMs * 3);
+    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalMs * 3));
   }
 
   const intervalSec = Number(
@@ -77,10 +79,10 @@ function resolveOfflineAfterMs(item, fallbackMs) {
       merged?.reportingIntervalSec
   );
   if (Number.isFinite(intervalSec) && intervalSec > 0) {
-    return Math.max(fallbackMs, intervalSec * 3000);
+    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalSec * 3000));
   }
 
-  return fallbackMs;
+  return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, fallbackMs));
 }
 
 /**
@@ -107,8 +109,8 @@ export function computeIsOnline(item, offlineAfterMs = OFFLINE_AFTER_MS) {
     return explicitOnline;
   }
 
-  // Treat missing timestamp as online unless proven otherwise.
-  return true;
+  // Missing timestamp cannot prove freshness; treat as offline.
+  return false;
 }
 
 function pickCaseInsensitive(obj, keys = []) {
