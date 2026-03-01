@@ -1,0 +1,811 @@
+/*
+ * GraphShowScreen.js
+ *
+ * This screen displays a detailed graph view for a specific device context (e.g., Cabin1).
+ * It includes date filtering to adjust the graph range.
+ *
+ * Key Features:
+ * - LineChart visualization of Temperature and Humidity.
+ * - Date Range Filter with DateTimePicker.
+ * - Custom Legend for chart series.
+ */
+
+import React, { useRef, useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
+  SafeAreaView,
+  Image,
+  ImageBackground,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator
+} from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { LineChart } from "react-native-chart-kit";
+import { fetchAllIoTReadings, fetchRealTimeDataMonitor } from '../api/dataService';
+import { useNavigation } from "@react-navigation/native";
+
+const screenWidth = Dimensions.get("window").width;
+const LIVE_POLL_MS = 1000;
+const MAX_GRAPH_POINTS = 100;
+
+const EMPTY_GRAPH_DATA = {
+  type: "env",
+  labels: ["0"],
+  temp: [0],
+  hum: [0],
+  press: {},
+};
+
+export default function GraphShowScreen({ route, navigation: navigationProp }) {
+  const navFromHook = useNavigation();
+  const navigation = navigationProp ?? navFromHook;
+
+  const tryParentBack = (nav) => {
+    let current = nav;
+    while (current) {
+      if (current?.canGoBack?.()) {
+        current.goBack();
+        return true;
+      }
+      current = current.getParent?.();
+    }
+    return false;
+  };
+
+  const handleBack = () => {
+    if (tryParentBack(navigation)) return;
+    // Hard fallback: reset to Home stack (TabNavigator entry)
+    navigation?.reset?.({
+      index: 0,
+      routes: [{ name: "Home" }],
+    });
+  };
+  // Get params from navigation (provided by HomeScreen)
+  const { deviceId } = route.params || { deviceId: "Unknown" };
+
+  // --- State for Data ---
+  const [isLoading, setIsLoading] = useState(false);
+  const [graphData, setGraphData] = useState(EMPTY_GRAPH_DATA);
+  const [viewMode, setViewMode] = useState("live"); // "live" | "history"
+  const [liveNotice, setLiveNotice] = useState("");
+  const lastLiveTsRef = useRef(null);
+
+  // --- State for Date Filter ---
+  const getToday = () => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+  };
+
+  const getSevenDaysAgo = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+  };
+
+  const [startDate, setStartDate] = useState(getSevenDaysAgo());
+  const [endDate, setEndDate] = useState(getToday());
+
+  const [showPicker, setShowPicker] = useState(false);
+  const [currentField, setCurrentField] = useState(null);
+
+  // Helpers
+  const pickNumberAlias = (obj, aliases = []) => {
+    if (!obj || typeof obj !== "object") return undefined;
+    const lowerMap = {};
+    Object.entries(obj).forEach(([k, v]) => (lowerMap[String(k).toLowerCase()] = v));
+    for (const alias of aliases) {
+      const lk = String(alias).toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(lowerMap, lk)) {
+        const n = Number(lowerMap[lk]);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+    return undefined;
+  };
+
+  const getEnvValues = (item) => {
+    const temperature = pickNumberAlias(item, ["temperature_c", "temperature deg", "temperature", "temp"]);
+    const humidity = pickNumberAlias(item, ["humidity_pct", "humidity %", "humidity", "hum"]);
+    return { temperature, humidity };
+  };
+
+  const getTsEpochMs = (item) => {
+    const ts = Number(item?.tsEpochMs ?? item?.ts_epoch_ms);
+    return Number.isFinite(ts) ? Math.round(ts) : undefined;
+  };
+
+  const extractPressMetrics = (item) => {
+    const presses = {};
+    Object.entries(item || {}).forEach(([key, val]) => {
+      const ampMatch = key.match(/^Press\s*(\d+)\s*Amps$/i);
+      const alarmMatch = key.match(/^Press\s*(\d+)\s*Alarm$/i);
+      if (ampMatch) {
+        const id = ampMatch[1];
+        presses[id] = presses[id] || {};
+        presses[id].amps = Number(val);
+      } else if (alarmMatch) {
+        const id = alarmMatch[1];
+        presses[id] = presses[id] || {};
+        presses[id].alarm = Number(val);
+      }
+    });
+    const list = Object.keys(presses)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((id) => ({ id, amps: presses[id]?.amps ?? 0, alarm: presses[id]?.alarm ?? 0 }));
+    return list;
+  };
+
+  // Return consistent colors for press lines/legend with fallbacks for extra presses
+  const getPressColor = (pid, idx = 0, opacity = 1) => {
+    const map = {
+      "1": `rgba(231, 76, 60, ${opacity})`,  // red
+      "2": `rgba(46, 204, 113, ${opacity})`, // green
+      "3": `rgba(52, 152, 219, ${opacity})`, // blue
+    };
+    return map[String(pid)] || `rgba(255, ${100 + idx * 40}, 0, ${opacity})`;
+  };
+
+  // Helper: Parse DD-MM-YYYY to Timestamp
+  const parseDateToTs = (dateStr, isEndOfDay = false) => {
+    if (!dateStr) return 0;
+    const [day, month, year] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (isEndOfDay) date.setHours(23, 59, 59, 999);
+    else date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  };
+
+  const normalizeId = (id) => String(id || "").trim().toLowerCase();
+
+  const formatTimeLabel = (ts, withSeconds = false) => {
+    const d = new Date(Number(ts));
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    if (!withSeconds) return `${h}:${m}`;
+    const s = String(d.getSeconds()).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  };
+
+  const appendPoint = (arr, value) => [...(arr || []).slice(-(MAX_GRAPH_POINTS - 1)), value];
+
+  const fetchHistory = async () => {
+    setIsLoading(true);
+    console.log(`GraphShowScreen: Fetching history for ${deviceId} from ${startDate} to ${endDate}`);
+
+    const targetId = normalizeId(deviceId);
+
+    if (!targetId) {
+      setGraphData(EMPTY_GRAPH_DATA);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Resolve date range
+      const startTs = parseDateToTs(startDate, false);
+      const endTs = parseDateToTs(endDate, true);
+      console.log(`GraphShowScreen: Target Range TS: ${startTs} - ${endTs}`);
+
+      // 2. Fetch paged IoT readings for this device/range
+      const { IoTReadings, _meta: fetchMeta } = await fetchAllIoTReadings({
+        deviceId: String(deviceId),
+        startTsEpochMs: startTs,
+        endTsEpochMs: endTs,
+      });
+      const sourceReadings = (IoTReadings || []).filter((item) => item?._schemaValid);
+      console.log("GraphShowScreen: Total IoTReadings:", sourceReadings.length);
+      if (fetchMeta?.potentiallyIncomplete) {
+        console.warn(
+          `[GraphShowScreen] IoTReadings may be partial. stopReason=${fetchMeta.stopReason} pages=${fetchMeta.pagesFetched}`
+        );
+      }
+
+      // 3. Filter for this device and date range (defensive client-side filter)
+      const filtered = sourceReadings
+        .map((item) => ({ ...item, graphTsEpochMs: getTsEpochMs(item) }))
+        .filter((item) => item.graphTsEpochMs !== undefined)
+        .filter(item => {
+          const dId = normalizeId(item.deviceId || "Unknown");
+          const ts = Number(item.graphTsEpochMs);
+          return dId === targetId && ts >= startTs && ts <= endTs;
+        })
+        .sort((a, b) => a.graphTsEpochMs - b.graphTsEpochMs); // Chronological order
+
+      console.log(`GraphShowScreen: Found ${filtered.length} points for ${deviceId}`);
+
+      // 4. Process limit (latest 100 points for rendering performance)
+      const DISPLAY_LIMIT = 100;
+      const sliced = filtered.slice(-DISPLAY_LIMIT);
+
+      if (sliced.length > 0) {
+        const labels = [];
+        const temp = [];
+        const hum = [];
+        const pressMap = {};
+        let isPress = false;
+
+        sliced.forEach(item => {
+          const d = new Date(Number(item.graphTsEpochMs));
+          labels.push(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+          const pressList = extractPressMetrics(item);
+          const envVals = getEnvValues(item);
+          const hasEnv =
+            Number.isFinite(Number(envVals.temperature)) ||
+            Number.isFinite(Number(envVals.humidity));
+          const hasPress =
+            pressList.length > 0 &&
+            pressList.some((p) => Number.isFinite(Number(p.amps)));
+          const isPressReading = hasPress && !hasEnv;
+
+          if (isPressReading) {
+            isPress = true;
+            pressList.forEach(p => {
+              if (!pressMap[p.id]) pressMap[p.id] = [];
+              pressMap[p.id].push(Number(p.amps) || 0);
+            });
+          } else {
+            temp.push(Number(envVals.temperature) || 0);
+            hum.push(Number(envVals.humidity) || 0);
+          }
+        });
+
+        if (isPress) {
+          setGraphData({
+            type: "press",
+            labels,
+            press: pressMap,
+            temp: [],
+            hum: []
+          });
+        } else {
+          setGraphData({
+            type: "env",
+            labels,
+            temp,
+            hum,
+            press: {}
+          });
+        }
+      } else {
+        // No data found
+        console.log("GraphShowScreen: No data after filtering.");
+        setGraphData(EMPTY_GRAPH_DATA);
+      }
+
+    } catch (e) {
+      console.error("GraphShow fetch error:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- History fetch ---
+  useEffect(() => {
+    if (viewMode !== "history") return;
+    fetchHistory();
+  }, [viewMode, deviceId, startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Live polling (selected device only) ---
+  useEffect(() => {
+    if (viewMode !== "live") return;
+
+    let cancelled = false;
+    const targetId = normalizeId(deviceId);
+    lastLiveTsRef.current = null;
+    setGraphData({ type: "env", labels: [], temp: [], hum: [], press: {} });
+    setLiveNotice("");
+
+    const pollLive = async () => {
+      try {
+        const rows = await fetchRealTimeDataMonitor();
+        if (cancelled) return;
+
+        const selected = (rows || []).find((item) => normalizeId(item?.deviceId) === targetId);
+        if (!selected) {
+          setLiveNotice("No live reading yet for this device.");
+          return;
+        }
+
+        const tsEpochMs = getTsEpochMs(selected);
+        if (!Number.isFinite(tsEpochMs)) {
+          setLiveNotice("Live reading missing tsEpochMs.");
+          return;
+        }
+
+        // Prevent duplicate points when backend returns same latest record repeatedly.
+        if (lastLiveTsRef.current === tsEpochMs) return;
+        lastLiveTsRef.current = tsEpochMs;
+        setLiveNotice("");
+
+        const pressList = extractPressMetrics(selected);
+        const envVals = getEnvValues(selected);
+        const hasEnv =
+          Number.isFinite(Number(envVals.temperature)) ||
+          Number.isFinite(Number(envVals.humidity));
+        const hasPress =
+          pressList.length > 0 &&
+          pressList.some((p) => Number.isFinite(Number(p.amps)));
+        const isPressReading = hasPress && !hasEnv;
+        const label = formatTimeLabel(tsEpochMs, true);
+
+        setGraphData((prev) => {
+          if (isPressReading) {
+            const incoming = {};
+            pressList.forEach((p) => {
+              incoming[String(p.id)] = Number(p.amps) || 0;
+            });
+            const prevPress = prev?.type === "press" ? (prev.press || {}) : {};
+            const allIds = Array.from(new Set([...Object.keys(prevPress), ...Object.keys(incoming)]))
+              .sort((a, b) => Number(a) - Number(b));
+            const nextPress = {};
+            allIds.forEach((pid) => {
+              const nextVal = Object.prototype.hasOwnProperty.call(incoming, pid) ? incoming[pid] : 0;
+              nextPress[pid] = appendPoint(prevPress[pid], nextVal);
+            });
+            return {
+              type: "press",
+              labels: appendPoint(prev?.labels, label),
+              press: nextPress,
+              temp: [],
+              hum: [],
+            };
+          }
+
+          const temp = Number(envVals.temperature) || 0;
+          const hum = Number(envVals.humidity) || 0;
+          const prevEnv = prev?.type === "env" ? prev : { labels: [], temp: [], hum: [] };
+          return {
+            type: "env",
+            labels: appendPoint(prevEnv.labels, label),
+            temp: appendPoint(prevEnv.temp, temp),
+            hum: appendPoint(prevEnv.hum, hum),
+            press: {},
+          };
+        });
+      } catch (e) {
+        if (!cancelled) setLiveNotice("Unable to fetch live data.");
+      }
+    };
+
+    pollLive();
+    const timer = setInterval(pollLive, LIVE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [viewMode, deviceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Opens the date picker for 'start' or 'end' field.
+   */
+  const showDatePicker = (field) => {
+    setCurrentField(field);
+    setShowPicker(true);
+  };
+
+  /**
+   * Handles date selection.
+   * Formats date as DD-MM-YYYY.
+   */
+  const onDateChange = (event, selectedDate) => {
+    setShowPicker(false);
+    if (selectedDate) {
+      // Manual formatting to match DD-MM-YYYY
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const year = selectedDate.getFullYear();
+      const formatted = `${day}-${month}-${year}`;
+
+      if (currentField === "start") {
+        setStartDate(formatted);
+      } else if (currentField === "end") {
+        setEndDate(formatted);
+      }
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <Image source={require("../../assets/images/WaveTop.png")} style={styles.headerImage} />
+      <View style={styles.topHeader}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Image
+            source={require("../../assets/images/BackIcon.png")}
+            style={styles.icon}
+          />
+        </TouchableOpacity>
+        <Text style={styles.headerText} numberOfLines={1} adjustsFontSizeToFit>
+          {route.params?.deviceName || deviceId}
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      {/* Main Content */}
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.modeSwitchRow}>
+          <TouchableOpacity
+            style={[styles.modeBtn, viewMode === "live" && styles.modeBtnActive]}
+            onPress={() => setViewMode("live")}
+          >
+            <Text style={[styles.modeBtnText, viewMode === "live" && styles.modeBtnTextActive]}>Live</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, viewMode === "history" && styles.modeBtnActive]}
+            onPress={() => setViewMode("history")}
+          >
+            <Text style={[styles.modeBtnText, viewMode === "history" && styles.modeBtnTextActive]}>History</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Date Filter Inputs (History mode only) */}
+        {viewMode === "history" && (
+          <View style={styles.filterRow}>
+            {/* Start Date */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Start Date</Text>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="DD-MM-YYYY"
+                  value={startDate}
+                  onChangeText={setStartDate}
+                />
+                <TouchableOpacity onPress={() => showDatePicker("start")}>
+                  <Image
+                    source={require("../../assets/images/Calender.png")}
+                    style={styles.calendarIcon}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* End Date */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>End Date</Text>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="DD-MM-YYYY"
+                  value={endDate}
+                  onChangeText={setEndDate}
+                />
+                <TouchableOpacity onPress={() => showDatePicker("end")}>
+                  <Image
+                    source={require("../../assets/images/Calender.png")}
+                    style={styles.calendarIcon}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Filter Button */}
+            <TouchableOpacity style={styles.filterBtn} onPress={fetchHistory}>
+              <Text style={styles.filterText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Graph Display */}
+        <View style={styles.graphContainer}>
+          <Text style={styles.title}>{viewMode === "live" ? "Live Analysis" : "History Analysis"}</Text>
+          {viewMode === "live" && !!liveNotice && (
+            <Text style={styles.liveNotice}>{liveNotice}</Text>
+          )}
+
+          {/* Legend */}
+          <View style={styles.legend}>
+            {graphData.type === "press" ? (
+              Object.keys(graphData.press || {})
+                .sort((a, b) => Number(a) - Number(b))
+                .map((pid, idx) => (
+                  <View style={styles.legendItem} key={pid}>
+                    <View style={[styles.dot, { backgroundColor: getPressColor(pid, idx, 1) }]} />
+                    <Text style={styles.legendText}>{`Phase-${pid} Amps`}</Text>
+                  </View>
+                ))
+            ) : (
+              <>
+                <View style={styles.legendItem}>
+                  <View style={[styles.dot, { backgroundColor: "orange" }]} />
+                  <Text style={styles.legendText}>Temp</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.dot, { backgroundColor: "blue" }]} />
+                  <Text style={styles.legendText}>Humidity</Text>
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* Loading Indicator */}
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#0000ff" style={{ marginVertical: 20 }} />
+          ) : (
+            <LineChart
+              data={{
+                labels: graphData.labels && graphData.labels.length ? graphData.labels : ["--"],
+                datasets:
+                  graphData.type === "press"
+                    ? Object.keys(graphData.press || {})
+                        .sort((a, b) => Number(a) - Number(b))
+                        .map((pid, idx) => ({
+                          data: graphData.press[pid] && graphData.press[pid].length ? graphData.press[pid] : [0],
+                          color: (opacity = 1) => getPressColor(pid, idx, opacity),
+                          strokeWidth: 2,
+                        }))
+                    : [
+                        {
+                          data: graphData.temp && graphData.temp.length ? graphData.temp : [0],
+                          color: (opacity = 1) => `rgba(255,165,0,${opacity})`, // Orange
+                          strokeWidth: 2,
+                        },
+                        {
+                          data: graphData.hum && graphData.hum.length ? graphData.hum : [0],
+                          color: (opacity = 1) => `rgba(0,0,255,${opacity})`, // Blue
+                          strokeWidth: 2,
+                        },
+                      ],
+              }}
+              width={screenWidth - 20}
+              height={220}
+              yAxisSuffix=""
+              fromZero
+              chartConfig={{
+                backgroundColor: "#fff",
+                backgroundGradientFrom: "#fff",
+                backgroundGradientTo: "#fff",
+                decimalPlaces: 1,
+                color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                propsForDots: {
+                  r: "4",
+                  strokeWidth: "2",
+                  stroke: "#ffa726",
+                },
+              }}
+              bezier
+              style={{
+                marginVertical: 8,
+                borderRadius: 16
+              }}
+            />
+          )}
+
+          {/* Axis Labels */}
+          <Text style={styles.xLabel}>Time</Text>
+          <Text style={styles.yLabel}>Val</Text>
+        </View>
+
+        {/* Download Data Button */}
+        <TouchableOpacity
+          style={styles.downloadBtn}
+          onPress={() =>
+            navigation.navigate("Export", {
+              deviceId,
+              deviceName: route.params?.deviceName,
+              startDate,
+              endDate,
+            })
+          }
+        >
+          <Text style={styles.downloadText}>Download Data</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Footer */}
+      <ImageBackground
+        source={require("../../assets/images/WaveBottom.png")}
+        style={styles.footer}
+        resizeMode="cover"
+      />
+
+      {/* Date Picker Modal */}
+      {showPicker && (
+        <DateTimePicker
+          value={new Date()}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+/* ------------------------- STYLES ------------------------- */
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFF"
+  },
+
+  /* Header Styles */
+  headerImage: { width: "100%", height: 86, resizeMode: "cover" },
+  topHeader: {
+    position: "absolute",
+    top: 22,
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    zIndex: 10,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSpacer: { width: 44 },
+  icon: {
+    width: 28,
+    height: 24,
+    resizeMode: "contain"
+  },
+  headerText: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#000",
+    flex: 1
+  },
+
+  /* Content Styles */
+  content: {
+    flexGrow: 1,
+    alignItems: "center",
+    padding: 10,
+    paddingBottom: 100, // Clear footer
+  },
+  modeSwitchRow: {
+    flexDirection: "row",
+    marginBottom: 12,
+    alignSelf: "center",
+  },
+  modeBtn: {
+    borderWidth: 1,
+    borderColor: "#d5d9e0",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginHorizontal: 4,
+    backgroundColor: "#fff",
+  },
+  modeBtnActive: {
+    backgroundColor: "#0b5fff",
+    borderColor: "#0b5fff",
+  },
+  modeBtnText: {
+    color: "#1e293b",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  modeBtnTextActive: {
+    color: "#fff",
+  },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 15,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  inputContainer: { marginHorizontal: 8 },
+  inputWithIcon: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  calendarIcon: {
+    width: 20,
+    height: 20,
+    marginLeft: 5
+  },
+  label: {
+    fontSize: 14,
+    marginBottom: 4,
+    color: "#000",
+    fontWeight: "600"
+  },
+  input: {
+    borderWidth: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    width: 100,
+    fontSize: 12
+  },
+  filterBtn: {
+    backgroundColor: "#f5a623",
+    paddingHorizontal: 20,
+    paddingVertical: 6,
+    borderRadius: 5,
+    marginLeft: 8,
+    marginTop: 18,
+  },
+  filterText: {
+    color: "black",
+    fontWeight: "bold",
+    fontSize: 14
+  },
+
+  /* Graph Styles */
+  graphContainer: {
+    alignItems: "center",
+    marginTop: 10
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
+    textAlign: "center"
+  },
+  liveNotice: {
+    fontSize: 12,
+    color: "#334155",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  legend: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 5
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 5
+  },
+  legendText: {
+    fontSize: 12,
+    color: "#000"
+  },
+  xLabel: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#000",
+    fontWeight: "bold"
+  },
+  yLabel: {
+    position: "absolute",
+    left: -15,
+    top: 150,
+    transform: [{ rotate: "-90deg" }],
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  downloadBtn: {
+    backgroundColor: "#f6b85c", // theme yellow
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    marginTop: 15,
+  },
+  downloadText: {
+    color: "#000",
+    fontWeight: "bold",
+    fontSize: 14
+  },
+
+  /* Footer Styles */
+  footer: {
+    height: 80,
+    width: "100%"
+  },
+});
