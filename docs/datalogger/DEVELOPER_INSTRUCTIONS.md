@@ -12,14 +12,23 @@ npm run android
 npm run ios
 ```
 
-## 2. Useful Commands
+## 2. iOS Setup
+
+```bash
+bundle install
+cd ios
+bundle exec pod install
+cd ..
+```
+
+## 3. Useful Commands
 
 ```bash
 npm run lint
 npm run test
 ```
 
-## 3. Configuration Points
+## 4. Configuration Hotspots
 
 ### API endpoint
 
@@ -28,64 +37,68 @@ npm run test
   - `API_URL`
   - `DASHBOARD_PATH`
 
-### API timeout
+### Timeout tuning
 
 - File: `src/api/dataService.js`
-- `fetchText` timeout is currently set to `60000` ms.
+- Constants:
+  - `DEFAULT_FETCH_TIMEOUT_MS = 60000`
+  - `FAST_STATUS_TIMEOUT_MS = 5000`
 
-### Polling interval
+### Fast status cache
 
-- Home, Dashboard, Graph, GraphShow, Alarm currently poll every `1000` ms.
-- Change interval constants inside each screen if needed.
+- File: `src/api/dataService.js`
+- Constant:
+  - `FAST_STATUS_CACHE_DEFAULT_MAX_AGE_MS = 30000`
+
+### Poll intervals
+
+- `DashboardScreen`: `AUTO_REFRESH_MS = 1000`
+- `HomeScreen`: `AUTO_REFRESH_MS = 1000`
+- `GraphScreen` live loop: `setInterval(..., 1000)`
+- `GraphShowScreen`: `LIVE_POLL_MS = 1000`
+- `AlarmScreen`: focused interval `1000`
 
 ### Offline threshold
 
 - File: `src/utils/deviceHealth.js`
-- `OFFLINE_AFTER_MS` currently `60000`.
+- Base value: `OFFLINE_AFTER_MS = 30000`
+- Effective threshold can change per device from status publish interval.
 
-## 4. Build Notes
+## 5. Navigation Rules
 
-### Android
+- Default tab bar is hidden; screens render custom bottom nav.
+- Use `navigateToTabRoute(...)` for cross-stack tab switches.
+- Use `logoutToAuthRoot(...)` for logout route reset behavior.
 
-- Ensure emulator/device USB debugging is available.
-- BLE testing requires physical device in most cases.
+## 6. Data and Export Rules
 
-### iOS
-
-```bash
-cd ios
-pod install
-cd ..
-npm run ios
-```
-
-## 5. Export and History Behavior
-
-- Export and history queries use `tsEpochMs` filtering.
-- Data fetch path is paginated through `fetchAllIoTReadings`.
-- CSV generated as latest-first (descending timestamp).
-
-## 6. Navigation Rules
-
-- Tab UI is custom; default tab bar is hidden.
-- Use `navigateToTabRoute` helper for bottom nav actions.
-- For screen back actions that can be nested, use parent-aware `goBack` fallback pattern.
+- History/export should use `fetchAllIoTReadings(...)`.
+- Filter window is based on normalized device timestamp aliases (`tsEpochMs` path).
+- CSV output is sorted newest first.
 
 ## 7. BLE Workflows
 
-- `SettingsScreen`:
-  - scan/connect BLE
-  - read all parameters
-  - write individual/all params
-  - monitor telemetry
-- `FactorySettingsScreen`:
-  - unlock with factory password
-  - update device ID
-  - update Wi-Fi credentials
+### Runtime settings (`SettingsScreen`)
 
-## 8. Source of Truth for App Logic
+- scan/connect/disconnect BLE
+- read snapshot
+- write param 1..9 (single/all)
+- monitor status, snapshot updates, live telemetry
 
-- API and normalization: `src/api/dataService.js`
-- Health classification: `src/utils/deviceHealth.js`
+### Factory settings (`FactorySettingsScreen`)
+
+- unlock password currently `blackstar`
+- update device ID over BLE
+- send Wi-Fi SSID/password over BLE
+
+## 8. Source of Truth by Area
+
+- API/normalization: `src/api/dataService.js`
+- Health logic: `src/utils/deviceHealth.js`
 - Navigation: `src/navigation/`
-- Screens: `src/screens/`
+- BLE contract/codec: `src/ble/`
+- Runtime screens: `src/screens/`
+
+## 9. Legacy Note
+
+- `src/screens_1/` contains older, non-runtime screen implementations.

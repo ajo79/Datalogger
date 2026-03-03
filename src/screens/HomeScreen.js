@@ -15,16 +15,18 @@ import {
   SafeAreaView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { fetchFastDeviceStatus } from "../api/dataService";
+import { fetchFastDeviceStatus, getCachedFastDeviceStatus } from "../api/dataService";
 import { classifyDeviceHealth, buildHealthSummary } from "../utils/deviceHealth";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { navigateToTabRoute } from "../navigation/navHelpers";
+import { useResponsiveLayout } from "../theme/responsive";
 
 /* ------------------------- CONFIG / THRESHOLDS ------------------------- */
 
 // Auto refresh interval (ms). Set to 0 to disable.
-const AUTO_REFRESH_MS = 1000;
+const AUTO_REFRESH_MS = 5000;
 const STATUS_FETCH_TIMEOUT_MS = 5000;
+const STATUS_CACHE_MAX_AGE_MS = 30000;
 
 const FILTER_LABELS = {
   all: "All Devices",
@@ -243,6 +245,7 @@ function getWifiInfo(item, { online = true } = {}) {
 export default function HomeScreen(props) {
   const navFromHook = useNavigation();
   const navigation = props?.navigation ?? navFromHook;
+  const ui = useResponsiveLayout();
   const navigateToTab = (route) => navigateToTabRoute(navigation, route);
   const refreshLabel = AUTO_REFRESH_MS > 0 ? `${Math.round(AUTO_REFRESH_MS / 1000)}s auto-refresh` : "Manual refresh";
 
@@ -288,6 +291,15 @@ export default function HomeScreen(props) {
     return items;
   }, [items, filterKey]);
 
+  const normalizedFilterLabel = useMemo(() => {
+    if (!ui.isCompact) return filterLabel;
+    const source = String(filterLabel || "");
+    if (source.toLowerCase().includes("good")) return "Good Devices";
+    if (source.toLowerCase().includes("issue")) return "Issue Devices";
+    if (source.toLowerCase().includes("all")) return "All Devices";
+    return source;
+  }, [filterLabel, ui.isCompact]);
+
   /**
    * Fetches data from the API.
    * Handles 'initial' load (screen spinner) and 'refresh' (pull-to-refresh).
@@ -320,11 +332,22 @@ export default function HomeScreen(props) {
     }
   }, []);
 
+  const hydrateFromWarmCache = useCallback(() => {
+    const cached = getCachedFastDeviceStatus({ maxAgeMs: STATUS_CACHE_MAX_AGE_MS });
+    if (!Array.isArray(cached)) return false;
+
+    setRawItems(cached);
+    setLoading(false);
+    setError("");
+    return true;
+  }, []);
+
   // --- Effects ---
 
   // Initial load and auto-refresh interval setup
   useEffect(() => {
-    loadData("initial");
+    const hydrated = hydrateFromWarmCache();
+    loadData(hydrated ? "auto" : "initial");
 
     if (AUTO_REFRESH_MS > 0) {
       timerRef.current = setInterval(() => loadData("auto"), AUTO_REFRESH_MS);
@@ -334,7 +357,7 @@ export default function HomeScreen(props) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [loadData]);
+  }, [hydrateFromWarmCache, loadData]);
 
   // Apply filter passed from Dashboard (good/issue/all)
   useEffect(() => {
@@ -446,34 +469,64 @@ export default function HomeScreen(props) {
     const wifi = getWifiInfo(item, { online });
 
     return (
-      <View style={styles.cabinBox}>
+      <View style={[styles.cabinBox, ui.isVeryCompact && styles.cabinBoxCompact]}>
         {/* Card Header: Cabin Name and ID */}
-        <View style={styles.cabinHeader}>
-          <View style={styles.cabinHeaderLeft}>
-            <Text style={styles.cabinName}>{String(item.deviceName ?? "Device")}</Text>
-            <Text style={styles.cabinID}>
+        <View style={[styles.cabinHeader, ui.isCompact && styles.cabinHeaderCompact]}>
+          <View style={[styles.cabinHeaderLeft, ui.isCompact && styles.cabinHeaderLeftCompact]}>
+            <Text
+              style={[styles.cabinName, { fontSize: ui.font(16, { min: 13, max: 17 }) }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              {String(item.deviceName ?? "Device")}
+            </Text>
+            <Text
+              style={[styles.cabinID, { fontSize: ui.font(16, { min: 13, max: 17 }) }]}
+              numberOfLines={1}
+              ellipsizeMode="middle"
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
               ID: {String(item.deviceId ?? "-")}
             </Text>
           </View>
 
-          <View style={styles.statusWrap}>
+          <View style={[styles.statusWrap, ui.isCompact && styles.statusWrapCompact]}>
             <MaterialCommunityIcons
               name={wifi.icon}
-              size={20}
+              size={ui.size(20, { min: 16, max: 22 })}
               color={wifi.color}
               style={styles.wifiHeaderIcon}
             />
             <View style={[styles.dot, { backgroundColor: dotColor }]} />
-            <Text style={styles.statusText}>{statusLabel}</Text>
+            <Text
+              style={[styles.statusText, { fontSize: ui.font(16, { min: 12, max: 16 }) }]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              {statusLabel}
+            </Text>
           </View>
         </View>
 
         {/* Metrics (dynamic: either press metrics or temp/humidity) */}
         {metricsInfo.metrics.map((m) => (
           <View style={styles.row} key={m.key}>
-            <Text style={styles.label}>{m.label}</Text>
+            <Text
+              style={[styles.label, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              {m.label}
+            </Text>
             <View style={styles.valueWithBadge}>
-              <Text style={styles.valueText}>{m.value}</Text>
+              <Text
+                style={[styles.valueText, { fontSize: ui.font(16, { min: 13, max: 17 }) }]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+              >
+                {m.value}
+              </Text>
             </View>
           </View>
         ))}
@@ -513,7 +566,7 @@ export default function HomeScreen(props) {
       {/* -------- Header Section -------- */}
       <Image source={require("../../assets/images/WaveTop.png")} style={styles.headerImage} />
 
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
         {/* Left Icon (Sidebar Trigger) */}
         <View style={styles.headerLeft}>
           <TouchableOpacity
@@ -531,28 +584,58 @@ export default function HomeScreen(props) {
         </View>
 
         {/* Center Title */}
-        <Text style={styles.headerText}>BIOT</Text>
+        <Text
+          style={[styles.headerText, { fontSize: ui.font(26, { min: 21, max: 27 }) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          BIOT
+        </Text>
 
         {/* Right Placeholder for balancing layout */}
         <View style={styles.headerRightPlaceholder} />
       </View>
 
       {/* -------- Main Content -------- */}
-      <View style={styles.filterRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.filterTitle}>{filterLabel}</Text>
-          <Text style={styles.filterSubtitle}>
+      <View style={[styles.filterRow, ui.isCompact && styles.filterRowCompact]}>
+        <View style={styles.filterInfo}>
+          <Text
+            style={[styles.filterTitle, { fontSize: ui.font(18, { min: 16, max: 20 }) }]}
+            numberOfLines={ui.isCompact ? 2 : 1}
+            maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+          >
+            {normalizedFilterLabel}
+          </Text>
+          <Text
+            style={[styles.filterSubtitle, { fontSize: ui.font(12, { min: 11, max: 13 }) }]}
+            numberOfLines={1}
+            maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+          >
             {`${summary.total} devices · ${refreshLabel}`}
           </Text>
         </View>
-        <View style={styles.filterChips}>
+        <View style={[styles.filterChips, ui.isCompact && styles.filterChipsCompact]}>
           {["all", "good", "issue"].map((key) => (
             <Pressable
               key={key}
-              style={[styles.chip, filterKey === key && styles.chipActive]}
+              style={[
+                styles.chip,
+                ui.isCompact && styles.chipCompact,
+                filterKey === key && styles.chipActive,
+              ]}
               onPress={() => onChangeFilter(key)}
             >
-              <Text style={[styles.chipText, filterKey === key && styles.chipTextActive]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  { fontSize: ui.font(12, { min: 10, max: 13 }) },
+                  filterKey === key && styles.chipTextActive,
+                ]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+              >
                 {FILTER_LABELS[key]?.replace(" Devices", "")}
               </Text>
             </Pressable>
@@ -603,8 +686,18 @@ export default function HomeScreen(props) {
             onPress={() => navigateToTab("Dashboard")}
             activeOpacity={0.85}
           >
-            <Image source={require("../../assets/images/GraphIcon.png")} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>DASH</Text>
+            <Image
+              source={require("../../assets/images/GraphIcon.png")}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
+            />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              DASH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -612,8 +705,18 @@ export default function HomeScreen(props) {
             onPress={() => navigateToTab("Home")}
             activeOpacity={0.85}
           >
-            <Image source={require("../../assets/images/HomeIcon.png")} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>HOME</Text>
+            <Image
+              source={require("../../assets/images/HomeIcon.png")}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
+            />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              HOME
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -621,8 +724,18 @@ export default function HomeScreen(props) {
             onPress={() => navigateToTab("Graph")}
             activeOpacity={0.85}
           >
-            <Image source={require("../../assets/images/GraphIcon.png")} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>GRAPH</Text>
+            <Image
+              source={require("../../assets/images/GraphIcon.png")}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
+            />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              GRAPH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -630,8 +743,18 @@ export default function HomeScreen(props) {
             onPress={() => navigateToTab("Alarm")}
             activeOpacity={0.85}
           >
-            <Image source={require("../../assets/images/AlarmIcon.png")} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>ALARM</Text>
+            <Image
+              source={require("../../assets/images/AlarmIcon.png")}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
+            />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              ALARM
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -639,8 +762,18 @@ export default function HomeScreen(props) {
             onPress={() => navigateToTab("More")}
             activeOpacity={0.85}
           >
-            <Image source={require("../../assets/images/MoreIcon.png")} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>MORE</Text>
+            <Image
+              source={require("../../assets/images/MoreIcon.png")}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
+            />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              MORE
+            </Text>
           </TouchableOpacity>
         </View>
       </ImageBackground>
@@ -678,9 +811,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  filterRowCompact: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
+  filterInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
   filterTitle: { fontSize: 18, fontWeight: "700", color: "#000" },
   filterSubtitle: { fontSize: 12, color: "#666", marginTop: 2 },
   filterChips: { flexDirection: "row", alignItems: "center" },
+  filterChipsCompact: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    marginLeft: -6,
+  },
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -689,6 +835,10 @@ const styles = StyleSheet.create({
     borderColor: "#ddd",
     marginLeft: 6,
     backgroundColor: "#f7f7f7",
+  },
+  chipCompact: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
   chipActive: { borderColor: "#f6b85c", backgroundColor: "#ffe9c2" },
   chipText: { fontSize: 12, fontWeight: "600", color: "#444" },
@@ -705,6 +855,10 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
     elevation: 2, // Shadow for Android
   },
+  cabinBoxCompact: {
+    marginHorizontal: 10,
+    paddingHorizontal: 9,
+  },
   cabinHeader: {
     flexDirection: "row",
     backgroundColor: "#ffcc80",
@@ -712,25 +866,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 6,
     alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cabinHeaderCompact: {
+    alignItems: "flex-start",
   },
   cabinHeaderLeft: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    minWidth: 0,
+    marginRight: 8,
+  },
+  cabinHeaderLeftCompact: {
+    width: "100%",
+    marginRight: 0,
   },
   cabinName: {
     fontWeight: "bold",
     fontSize: 16,
     color: "#000",
     marginRight: 8,
-    flexShrink: 1, // Allow shrinking if needed
+    flexShrink: 1,
   },
   cabinID: {
     fontWeight: "bold",
     fontSize: 16,
     color: "#000",
-    textAlign: "right",
-    flexGrow: 1, // Take remaining space
+    flexShrink: 1,
   },
 
   row: { flexDirection: "row", alignItems: "center", marginTop: 10 },
@@ -770,12 +933,16 @@ const styles = StyleSheet.create({
   statusWrap: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 10,
+    marginLeft: 6,
     justifyContent: "flex-end", // Align to right
-    flex: 1, // Allow it to take available space
+    flexShrink: 0,
+  },
+  statusWrapCompact: {
+    marginTop: 6,
+    alignSelf: "flex-end",
   },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: "#111" },
-  statusText: { marginLeft: 6, fontWeight: "bold", color: "#000", flexShrink: 1 }, // Removed fixed width and padding
+  statusText: { marginLeft: 6, fontWeight: "bold", color: "#000" },
 
   /* Action Buttons */
   actionsRow: { marginTop: 6 },

@@ -1,94 +1,102 @@
 # API and Data Contract
 
-## 1. API Endpoint
+## 1. Endpoint
 
-- Base URL in app: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com`
-- Path in app: `/prod`
-- Full endpoint used by app: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
+- Base URL: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com`
+- Path: `/prod`
+- Full URL: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
 
-## 2. Request Pattern
+All mobile API calls are HTTP `GET` and are implemented in `src/api/dataService.js`.
 
-All app calls are `GET` requests from `src/api/dataService.js`.
+## 2. Request Modes
 
-### Generic dashboard call
+### Dashboard/default fetch
+
+Used by `fetchDashboardData`, `fetchData`, `fetchRealTimeDataMonitor`, `fetchESP32Alarms`.
 
 - Query: optional
-- Used by:
-  - `fetchDashboardData`
-  - `fetchData`
-  - `fetchRealTimeDataMonitor`
-  - `fetchESP32Alarms`
+- Timeout default: `60000` ms
 
-### IoT history/export call (paged)
+### Fast status fetch
 
-- Implemented by `fetchAllIoTReadings`
-- Typical query fields:
-  - `iotReadingsOnly=1`
-  - `deviceId` (optional)
-  - `startTsEpochMs` / `endTsEpochMs`
-  - cursor aliases:
-    - `cursor`
-    - `nextToken`
-    - `pageToken`
-    - `continuationToken`
+Used by `fetchFastDeviceStatus`.
 
-## 3. Response Shape (Expected)
+- Query includes `statusOnly=1`
+- Timeout default for this mode: `5000` ms
+- Falls back to regular `fetchData` on failure
 
-```json
-{
-  "IoTReadings": [],
-  "RealTimeDataMonitor": [],
-  "ESP32_Alarms": [],
-  "pagination": {
-    "IoTReadings": {
-      "nextToken": "...",
-      "hasMore": true
-    }
-  }
-}
-```
+### IoT history/export paged fetch
 
-Lambda proxy responses with stringified `body` are supported and normalized.
+Used by `fetchAllIoTReadings`.
 
-## 4. Normalization Rules in App
+Query fields sent by app:
 
-`normalizeReading` in `dataService.js`:
+- `iotReadingsOnly=1`
+- `deviceId` (optional)
+- range aliases:
+  - `startTsEpochMs`, `startTs`, `fromTs`
+  - `endTsEpochMs`, `endTs`, `toTs`
+- cursor aliases:
+  - `cursor`, `nextToken`, `pageToken`, `continuationToken`
 
-- unwraps/merges `payload`
-- normalizes `parameters[]`
-- derives:
-  - `tsServerMs` from `ts`/`timestamp`/`time`
-  - `tsDeviceMs` from `tsEpochMs`
-  - `ts` as server-first fallback
-- maps status/compat fields:
-  - wifi aliases to `wifi_strength`
-  - overall alarm to `Common Alarm`
-- computes `_schemaValid` using BIOT rules
+## 3. Expected Response Keys
 
-## 5. BIOT Schema Expectations
+Top-level keys expected by app:
 
-Preferred record format:
+- `IoTReadings` (array)
+- `RealTimeDataMonitor` (array)
+- `ESP32_Alarms` (array)
 
-- `schemaVersion = 1`
-- `msgType = telemetry`
-- `deviceId`
-- `siteId`, `deviceType`, `deviceName`
-- `tsEpochMs`
-- `status`:
-  - `wifiStrength`
-  - `overallAlarm`
-- `parameters[]`:
-  - `key`, `label`, `value`, `unit`, `order`, `showOnCard`, `alarm`
+Optional pagination hints may appear in multiple aliases, including nested `pagination`.
 
-## 6. Timestamp Policy
+Lambda proxy shape with stringified `body` is supported.
 
-- History and export filters use `tsEpochMs` only.
-- CSV timestamp column uses `tsEpochMs` and a local date-time representation.
-- For online/offline status, app uses server-ingestion-oriented timestamp (`ts` via normalized `tsServerMs`) with fallback.
+## 4. Row Normalization Rules
 
-## 7. Pagination and Completeness
+Each reading is normalized with this behavior:
 
-`fetchAllIoTReadings` loops pages until one of these stop conditions:
+- parse/unmarshal DynamoDB typed values if present
+- flatten `payload` object or JSON string onto root
+- normalize `parameters[]` fields:
+  - `key`, `label`, `value`, `unit`, `valueType`, `order`, `showOnCard`, `alarm`
+- derive canonical values:
+  - `temperature`
+  - `humidity`
+  - `wifi_strength`
+  - `Common Alarm`
+- derive timestamps:
+  - `tsServerMs` from server ingestion aliases (`ts`, `timestamp`, `time`)
+  - `tsDeviceMs` from device timestamp aliases (`tsEpochMs`, `ts_epoch_ms`)
+  - `ts` chooses server-first fallback
+- mark BIOT compatibility with `_schemaValid`
+
+## 5. BIOT Compatibility Rule
+
+Rows are treated as BIOT telemetry when either:
+
+- envelope exists (`schemaVersion >= 1` and `msgType=telemetry`)
+- or BIOT-shaped fields are present (`parameters[]` and status/site/device timing fields)
+
+Most runtime views filter to `_schemaValid === true`.
+
+## 6. Realtime + History Merge
+
+For live card/list views, app merges realtime rows with IoT fallback by `deviceId`.
+
+- realtime rows are primary
+- missing fields can be filled from latest IoT row for same device
+- reading-only rows not present in realtime are appended where needed
+
+## 7. Pagination/Completeness Metadata
+
+`fetchAllIoTReadings` returns `_meta`:
+
+- `pagesFetched`
+- `stopReason`
+- `potentiallyIncomplete`
+- `likelySinglePageCap`
+
+Common stop reasons:
 
 - `no_more`
 - `missing_next_token`
@@ -97,26 +105,28 @@ Preferred record format:
 - `no_new_rows`
 - `max_pages_reached`
 
-It returns metadata:
+Export screen shows warning alert when completeness is uncertain.
 
-- `pagesFetched`
-- `stopReason`
-- `potentiallyIncomplete`
-- `likelySinglePageCap`
+## 8. Timestamp Policy by Feature
 
-Export/graph screens warn when completeness is uncertain.
+- Online/offline freshness:
+  - uses normalized `ts` (server-first)
+- History graph and export filtering:
+  - use `tsEpochMs` aliases through normalized `tsDeviceMs`
+- CSV:
+  - sorted newest first by timestamp
+  - includes numeric epoch and local date-time string
 
-## 8. Sort Order and CSV
+## 9. Alarm Data Contract
 
-- Export rows are sorted by `tsEpochMs` descending.
-- Output CSV order is latest data first, older data later.
+Alarm screen source priority:
 
-## 9. Device Filtering
+1. `ESP32_Alarms`
+2. synthesized from IoT rows with alarm-active flags
+3. local AsyncStorage alarm log fallback
 
-- Device-specific export/history pass `deviceId`.
-- GraphShow live mode filters selected device by normalized `deviceId`.
+## 10. What Mobile Sends to AWS
 
-## 10. Alarms Contract
+The app sends only query parameters in GET requests (filters/pagination/status mode).
 
-- Primary source: `ESP32_Alarms`
-- Fallback source: synthesize from IoT telemetry where parameter/status alarm flags are active.
+It does not upload telemetry payloads to AWS from mobile code.

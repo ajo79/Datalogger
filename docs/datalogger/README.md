@@ -1,6 +1,6 @@
 # Datalogger Documentation
 
-This folder contains the standard technical documentation for the React Native `Datalogger` mobile application.
+This folder contains maintained technical documentation for the React Native `Datalogger` mobile application.
 
 ## Documents
 
@@ -24,4 +24,13 @@ This folder contains the standard technical documentation for the React Native `
 ## Scope
 
 - Scope is only the React Native app in `Datalogger/`.
-- The `DataGuard` folder is intentionally excluded.
+- Legacy code in `src/screens_1/` is documented as non-runtime and excluded from primary behavior descriptions.
+
+## Source of Truth
+
+When docs conflict with code, use these files as runtime truth:
+
+- Navigation: `src/navigation/`
+- Data/API normalization: `src/api/dataService.js`
+- Health classification: `src/utils/deviceHealth.js`
+- BLE behavior: `src/screens/SettingsScreen.js`, `src/screens/FactorySettingsScreen.js`, `src/ble/`

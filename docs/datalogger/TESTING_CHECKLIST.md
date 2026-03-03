@@ -21,7 +21,8 @@
 1. Home auto-refresh updates every 1 second.
 2. Dashboard auto-refresh updates every 1 second.
 3. Alarm list auto-refresh updates every 1 second.
-4. Online/offline status changes with timestamp staleness.
+4. Fast status warm cache hydrates Home/Dashboard on startup when recent data exists.
+5. Online/offline status changes with timestamp staleness and publish-interval dynamic thresholding.
 
 ## 4. Graph Tests
 
@@ -59,3 +60,4 @@
 2. `npm run test` passes (or document known failing tests).
 3. No unhandled Promise warnings during key flows.
 4. No navigation path throws route-not-found errors.
+5. Notification toggle persists across app relaunch (`@notification_enabled_v1`).

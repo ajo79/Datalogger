@@ -14,6 +14,13 @@ const API_URL = "https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com";
 const DASHBOARD_PATH = "/prod"; // change only if your stage/path differs
 const DEFAULT_FETCH_TIMEOUT_MS = 60000;
 const FAST_STATUS_TIMEOUT_MS = 5000;
+const FAST_STATUS_CACHE_DEFAULT_MAX_AGE_MS = 30000;
+
+let fastDeviceStatusCache = {
+  items: null,
+  fetchedAtMs: 0,
+};
+let fastDeviceStatusInFlight = null;
 
 function normalizeTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
   const n = Number(timeoutMs);
@@ -21,6 +28,27 @@ function normalizeTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
     return Math.max(1000, Math.round(n));
   }
   return fallbackMs;
+}
+
+function setFastDeviceStatusCache(items) {
+  fastDeviceStatusCache = {
+    items: Array.isArray(items) ? items : [],
+    fetchedAtMs: Date.now(),
+  };
+}
+
+export function getCachedFastDeviceStatus(options = {}) {
+  if (!Array.isArray(fastDeviceStatusCache.items)) return null;
+
+  const maxAgeMsRaw = Number(options?.maxAgeMs);
+  const maxAgeMs = Number.isFinite(maxAgeMsRaw) && maxAgeMsRaw >= 0
+    ? Math.round(maxAgeMsRaw)
+    : FAST_STATUS_CACHE_DEFAULT_MAX_AGE_MS;
+
+  const ageMs = Date.now() - Number(fastDeviceStatusCache.fetchedAtMs || 0);
+  if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;
+
+  return fastDeviceStatusCache.items;
 }
 
 function toQueryValue(value) {
@@ -813,11 +841,32 @@ export async function fetchFastDeviceStatus(options = {}) {
       query: { statusOnly: "1" },
       timeoutMs,
     });
-    return buildMergedBiotData(data);
+    const rows = buildMergedBiotData(data);
+    setFastDeviceStatusCache(rows);
+    return rows;
   } catch (error) {
     console.warn("[dataService] fast status fetch failed, falling back:", error?.message || error);
-    return fetchData({ timeoutMs });
+    const rows = await fetchData({ timeoutMs });
+    setFastDeviceStatusCache(rows);
+    return rows;
   }
+}
+
+export function prefetchFastDeviceStatus(options = {}) {
+  if (fastDeviceStatusInFlight) {
+    return fastDeviceStatusInFlight;
+  }
+
+  fastDeviceStatusInFlight = fetchFastDeviceStatus(options)
+    .catch((error) => {
+      console.warn("[dataService] prefetch status fetch failed:", error?.message || error);
+      return null;
+    })
+    .finally(() => {
+      fastDeviceStatusInFlight = null;
+    });
+
+  return fastDeviceStatusInFlight;
 }
 
 /**

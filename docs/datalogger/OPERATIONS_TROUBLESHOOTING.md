@@ -1,101 +1,98 @@
 # Operations and Troubleshooting
 
-## 1. Runtime Observability
+## 1. Primary Observability Points
 
-Primary places to inspect:
-
-- React Native metro logs / device logs
-- API Gateway invoke logs
-- Lambda logs
-- DynamoDB table data validity (server-side)
-
-App-level indicators:
-
-- Home/Dashboard counts and status labels
-- Graph live notices (`No live data`, `offline`, etc.)
-- Export warnings from `_meta.potentiallyIncomplete`
+- Mobile logs (Metro/device logs)
+- API Gateway/Lambda logs
+- DynamoDB data quality and timestamp freshness (server side)
+- In-app indicators:
+  - Dashboard counts
+  - Home status chips
+  - Graph live/history notices
+  - Export partial-data warning alerts
 
 ## 2. Common Issues
 
-## A. Device shows online initially, then offline
+## A. Device marked offline unexpectedly
 
 Checks:
 
-1. Verify fresh timestamps are arriving in API response (`ts` / `tsEpochMs`).
-2. Confirm `OFFLINE_AFTER_MS` in `deviceHealth.js` (currently `60000`).
-3. Confirm backend ingestion latency is not exceeding threshold.
+1. Confirm row timestamps are fresh (`tsServerMs`/`ts` path).
+2. Confirm base threshold in `deviceHealth.js` is `OFFLINE_AFTER_MS = 30000`.
+3. Check if device status includes publish interval fields; dynamic threshold may be applied.
+4. Validate backend ingestion latency.
 
-## B. CSV export missing records
-
-Checks:
-
-1. Confirm API pagination returns `pagination.IoTReadings.nextToken` and `hasMore`.
-2. Confirm app used `fetchAllIoTReadings` path (not single page).
-3. Check export warning popup for partial data.
-4. Validate date range and device filter.
-
-Notes:
-
-- App sorts CSV latest-first by `tsEpochMs`.
-- Missing backend tokens can still cause partial data even with app pagination logic.
-
-## C. Graph history empty but table has data
+## B. Export missing history rows
 
 Checks:
 
-1. Ensure table records contain numeric `tsEpochMs`.
-2. Verify selected date range includes those timestamps.
-3. Confirm records are BIOT schema-valid (`schemaVersion/msgType/shape`).
+1. Confirm export path used `fetchAllIoTReadings`.
+2. Inspect `_meta.stopReason` and `_meta.potentiallyIncomplete`.
+3. Reduce date range and retry.
+4. Validate timestamp fields are present/valid for range filtering.
 
-## D. About App back issue
-
-Current behavior:
-
-- Uses parent-aware back traversal.
-- Falls back to `More` tab if stack cannot go back.
-
-## E. BLE scan/connect not working
+## C. Graph history shows no data
 
 Checks:
 
-1. Android permissions granted.
-2. Device Bluetooth and location enabled (older Android).
-3. BLE device advertising and in range.
-4. Correct service/characteristic UUIDs in `bleContract.js`.
+1. Validate date format in UI (`DD-MM-YYYY`).
+2. Confirm selected range contains records.
+3. Confirm records pass BIOT schema validity (`_schemaValid`).
+4. Confirm timestamp aliases normalize correctly (`tsEpochMs`/`ts_epoch_ms`).
 
-## 3. Safe Operational Changes
+## D. Alarm screen empty
 
-### Change API timeout
+Alarm source priority:
+
+1. `ESP32_Alarms` API rows
+2. synthesized alarms from telemetry
+3. local AsyncStorage alarm log
+
+If empty, validate all three paths and network status.
+
+## E. BLE scan/connect failures
+
+Checks:
+
+1. Android runtime permissions granted (`SCAN`/`CONNECT` or legacy location).
+2. Bluetooth is enabled.
+3. Device is advertising and in range.
+4. UUID mapping matches firmware (`src/ble/bleContract.js`).
+
+## 3. Safe Runtime Tuning
+
+## API timeout
 
 - File: `src/api/dataService.js`
-- `setTimeout(() => controller.abort(), 60000)`
+- `DEFAULT_FETCH_TIMEOUT_MS` and `FAST_STATUS_TIMEOUT_MS`
 
-### Change polling intervals
+## Polling cadence
 
-- Update constants in:
-  - `HomeScreen`
+- File-level constants/intervals in:
   - `DashboardScreen`
+  - `HomeScreen`
   - `GraphScreen`
   - `GraphShowScreen`
   - `AlarmScreen`
 
-### Change offline threshold
+## Offline classification
 
 - File: `src/utils/deviceHealth.js`
-- `OFFLINE_AFTER_MS`
+- Base: `OFFLINE_AFTER_MS`
+- Dynamic behavior from publish/report interval fields
 
-## 4. Incident Quick Checks
+## 4. Incident Quick Checklist
 
-1. API reachable with GET `/prod`.
-2. `IoTReadings` non-empty in response.
-3. `tsEpochMs` present in returned readings.
-4. `pagination` fields present for large-range export/history.
-5. App device time and timezone not heavily skewed.
+1. API `/prod` is reachable from device network.
+2. Response includes expected arrays.
+3. Recent timestamps are present in returned rows.
+4. Pagination metadata is returned for large history windows.
+5. No screen-level timer leaks after navigation/unmount.
 
-## 5. Recommended Hardening Backlog
+## 5. Hardening Backlog
 
-1. Move API URL to environment-based config.
-2. Add server-enforced auth for API access.
-3. Add explicit API schema versioning and contract tests.
-4. Add telemetry/error reporting integration.
-5. Remove unused legacy screens and duplicate screen folder.
+1. Move API base URL/stage to environment config.
+2. Add production auth and secure token handling.
+3. Add contract tests around normalization and pagination.
+4. Add app telemetry/error reporting.
+5. Remove or isolate legacy `src/screens_1`.

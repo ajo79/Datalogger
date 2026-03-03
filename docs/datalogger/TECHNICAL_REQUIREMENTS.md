@@ -1,89 +1,104 @@
 # Technical Requirements
 
-## 1. Application Stack
+## 1. Framework and Package Baseline
 
 - React Native: `0.83.1`
 - React: `19.2.0`
-- Node.js: `>=20` (from `package.json`)
+- Node.js: `>=20`
 - Navigation:
   - `@react-navigation/native`
   - `@react-navigation/native-stack`
   - `@react-navigation/bottom-tabs`
-- Charts:
+- Data/chart:
   - `react-native-chart-kit`
   - `react-native-svg`
-- Storage:
-  - `@react-native-async-storage/async-storage`
-- File export/share:
-  - `react-native-fs`
-  - `react-native-share`
 - BLE:
   - `react-native-ble-plx`
+- Storage:
+  - `@react-native-async-storage/async-storage`
+- Export/share:
+  - `react-native-fs`
+  - `react-native-share`
 
-## 2. Development Environment
-
-- OS: Windows/macOS/Linux (React Native capable)
-- Java + Android SDK for Android builds
-- Xcode + CocoaPods for iOS builds
-- Watchman recommended on macOS
-
-## 3. Runtime Permissions
+## 2. Native Build Baseline
 
 ### Android
 
-- BLE (Android 12+):
-  - `BLUETOOTH_SCAN`
-  - `BLUETOOTH_CONNECT`
-- BLE (older Android):
-  - `ACCESS_FINE_LOCATION`
-- CSV export fallback for older Android:
-  - `WRITE_EXTERNAL_STORAGE` (< Android 13 path)
+- `minSdkVersion = 24`
+- `targetSdkVersion = 36`
+- `compileSdkVersion = 36`
+- Hermes enabled
+- New architecture enabled
 
 ### iOS
 
-- Bluetooth and file access usage descriptions must exist in `Info.plist` for BLE and file sharing behavior.
+- deployment target: `15.1` (Xcode project setting)
+- CocoaPods required for native dependency installation
 
-## 4. Backend/API Requirements
+## 3. Runtime Permissions
 
-App expects a reachable API endpoint:
+### Android manifest permissions
+
+- `android.permission.INTERNET`
+- `android.permission.BLUETOOTH` (`maxSdkVersion=30`)
+- `android.permission.BLUETOOTH_ADMIN` (`maxSdkVersion=30`)
+- `android.permission.ACCESS_FINE_LOCATION` (`maxSdkVersion=30`)
+- `android.permission.BLUETOOTH_SCAN`
+- `android.permission.BLUETOOTH_CONNECT`
+
+### Android runtime requests in code
+
+- API 31+:
+  - `BLUETOOTH_SCAN`
+  - `BLUETOOTH_CONNECT`
+- API <= 30:
+  - `ACCESS_FINE_LOCATION`
+- Export screen may request `WRITE_EXTERNAL_STORAGE` for older Android direct-download fallback path.
+
+### iOS Info.plist usage strings
+
+- `NSBluetoothAlwaysUsageDescription`
+- `NSBluetoothPeripheralUsageDescription`
+- `NSLocationWhenInUseUsageDescription`
+
+## 4. API Contract Expectations
+
+The app requires reachable endpoint:
 
 - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
 
-Expected top-level response keys:
+Expected arrays in response:
 
-- `IoTReadings` (array)
-- `RealTimeDataMonitor` (array)
-- `ESP32_Alarms` (array)
+- `IoTReadings`
+- `RealTimeDataMonitor`
+- `ESP32_Alarms`
 
-Optional pagination metadata:
+Optional pagination keys can appear under multiple aliases and nested objects.
 
-- `pagination.IoTReadings.nextToken`
-- `pagination.IoTReadings.hasMore`
+## 5. Data Contract Requirements (for full feature support)
 
-## 5. Data Contract Requirements (BIOT Focus)
+Preferred BIOT telemetry fields:
 
-For normal telemetry rendering, records should include BIOT envelope:
-
-- `schemaVersion >= 1`
+- `schemaVersion`
 - `msgType = telemetry`
 - `deviceId`
-- `tsEpochMs`
-- `parameters[]` with metric values
-- `status` (e.g. `wifiStrength`, `overallAlarm`)
+- `tsEpochMs` (or alias)
+- `parameters[]`
+- `status` (wifi/alarm state)
 
-History and export depend on valid numeric `tsEpochMs`.
+History/graph/export accuracy depends on valid numeric device timestamps.
 
-## 6. Performance/Operational Requirements
+## 6. Performance/Runtime Assumptions
 
-- Polling cadence currently 1 second on key screens.
-- API request timeout currently 60 seconds.
-- CSV export requires backend pagination for large datasets to avoid partial exports.
-- Mobile must handle large response payloads without app crash (filtering and capping are implemented in UI).
+- Polling cadence on core screens: 1 second.
+- Default API timeout: 60 seconds.
+- Fast status timeout: 5 seconds.
+- Fast status cache max age: 30 seconds.
 
 ## 7. Security Status (Current)
 
-- Authentication is local/factory fallback and not enterprise-grade.
-- Credentials/toggles are stored locally in AsyncStorage.
-- API call currently does not enforce token header from app side.
+- Auth is local/factory fallback and not production-grade.
+- Credentials/session are stored in AsyncStorage.
+- Mobile API calls currently do not attach auth headers.
 
-Production hardening is required before external deployment.
+Production hardening is required before public deployment.

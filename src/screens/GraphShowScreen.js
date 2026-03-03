@@ -28,10 +28,13 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { LineChart } from "react-native-chart-kit";
 import { fetchAllIoTReadings, fetchRealTimeDataMonitor } from '../api/dataService';
 import { useNavigation } from "@react-navigation/native";
+import { computeIsOnline } from "../utils/deviceHealth";
 
 const screenWidth = Dimensions.get("window").width;
-const LIVE_POLL_MS = 1000;
+const LIVE_POLL_MS = 5000;
+const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll
 const MAX_GRAPH_POINTS = 100;
+const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
 
 const EMPTY_GRAPH_DATA = {
   type: "env",
@@ -74,6 +77,9 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
   const [viewMode, setViewMode] = useState("live"); // "live" | "history"
   const [liveNotice, setLiveNotice] = useState("");
   const lastLiveTsRef = useRef(null);
+  const offlineStreakRef = useRef(0);
+  const chartScrollRef = useRef(null);
+  const [chartScrollX, setChartScrollX] = useState(0);
 
   // --- State for Date Filter ---
   const getToday = () => {
@@ -297,6 +303,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     let cancelled = false;
     const targetId = normalizeId(deviceId);
     lastLiveTsRef.current = null;
+    offlineStreakRef.current = 0;
     setGraphData({ type: "env", labels: [], temp: [], hum: [], press: {} });
     setLiveNotice("");
 
@@ -307,9 +314,21 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
         const selected = (rows || []).find((item) => normalizeId(item?.deviceId) === targetId);
         if (!selected) {
+          offlineStreakRef.current = 0;
           setLiveNotice("No live reading yet for this device.");
           return;
         }
+
+        if (computeIsOnline(selected)) {
+          offlineStreakRef.current = 0;
+        } else {
+          offlineStreakRef.current += 1;
+          if (offlineStreakRef.current >= OFFLINE_STALE_HYSTERESIS_COUNT) {
+            setLiveNotice("Device is offline. Live graph shows online devices only.");
+            return;
+          }
+        }
+        setLiveNotice("");
 
         const tsEpochMs = getTsEpochMs(selected);
         if (!Number.isFinite(tsEpochMs)) {
@@ -408,6 +427,11 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
       }
     }
   };
+
+  const chartLabels = graphData.labels && graphData.labels.length ? graphData.labels : ["--"];
+  const viewportWidth = Math.max(screenWidth - 20, 260);
+  const chartWidth = Math.max(viewportWidth, chartLabels.length * MIN_POINT_WIDTH);
+  const canScroll = chartWidth > viewportWidth;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -527,54 +551,92 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
           {isLoading ? (
             <ActivityIndicator size="large" color="#0000ff" style={{ marginVertical: 20 }} />
           ) : (
-            <LineChart
-              data={{
-                labels: graphData.labels && graphData.labels.length ? graphData.labels : ["--"],
-                datasets:
-                  graphData.type === "press"
-                    ? Object.keys(graphData.press || {})
-                        .sort((a, b) => Number(a) - Number(b))
-                        .map((pid, idx) => ({
-                          data: graphData.press[pid] && graphData.press[pid].length ? graphData.press[pid] : [0],
-                          color: (opacity = 1) => getPressColor(pid, idx, opacity),
-                          strokeWidth: 2,
-                        }))
-                    : [
-                        {
-                          data: graphData.temp && graphData.temp.length ? graphData.temp : [0],
-                          color: (opacity = 1) => `rgba(255,165,0,${opacity})`, // Orange
-                          strokeWidth: 2,
-                        },
-                        {
-                          data: graphData.hum && graphData.hum.length ? graphData.hum : [0],
-                          color: (opacity = 1) => `rgba(0,0,255,${opacity})`, // Blue
-                          strokeWidth: 2,
-                        },
-                      ],
-              }}
-              width={screenWidth - 20}
-              height={220}
-              yAxisSuffix=""
-              fromZero
-              chartConfig={{
-                backgroundColor: "#fff",
-                backgroundGradientFrom: "#fff",
-                backgroundGradientTo: "#fff",
-                decimalPlaces: 1,
-                color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                propsForDots: {
-                  r: "4",
-                  strokeWidth: "2",
-                  stroke: "#ffa726",
-                },
-              }}
-              bezier
-              style={{
-                marginVertical: 8,
-                borderRadius: 16
-              }}
-            />
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator
+                contentContainerStyle={styles.chartScroll}
+                ref={chartScrollRef}
+                onScroll={(e) => setChartScrollX(e?.nativeEvent?.contentOffset?.x || 0)}
+                scrollEventThrottle={16}
+              >
+                <LineChart
+                  data={{
+                    labels: chartLabels,
+                    datasets:
+                      graphData.type === "press"
+                        ? Object.keys(graphData.press || {})
+                            .sort((a, b) => Number(a) - Number(b))
+                            .map((pid, idx) => ({
+                              data: graphData.press[pid] && graphData.press[pid].length ? graphData.press[pid] : [0],
+                              color: (opacity = 1) => getPressColor(pid, idx, opacity),
+                              strokeWidth: 2,
+                            }))
+                        : [
+                            {
+                              data: graphData.temp && graphData.temp.length ? graphData.temp : [0],
+                              color: (opacity = 1) => `rgba(255,165,0,${opacity})`, // Orange
+                              strokeWidth: 2,
+                            },
+                            {
+                              data: graphData.hum && graphData.hum.length ? graphData.hum : [0],
+                              color: (opacity = 1) => `rgba(0,0,255,${opacity})`, // Blue
+                              strokeWidth: 2,
+                            },
+                          ],
+                  }}
+                  width={chartWidth}
+                  height={220}
+                  yAxisSuffix=""
+                  fromZero
+                  chartConfig={{
+                    backgroundColor: "#fff",
+                    backgroundGradientFrom: "#fff",
+                    backgroundGradientTo: "#fff",
+                    decimalPlaces: 1,
+                    color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                    labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                    propsForDots: {
+                      r: "4",
+                      strokeWidth: "2",
+                      stroke: "#ffa726",
+                    },
+                  }}
+                  bezier
+                  style={{
+                    marginVertical: 8,
+                    borderRadius: 16
+                  }}
+                />
+              </ScrollView>
+              <View style={styles.scrollControls}>
+                <TouchableOpacity
+                  style={[styles.scrollBtn, !canScroll && styles.scrollBtnDisabled]}
+                  disabled={!canScroll}
+                  onPress={() => {
+                    const step = viewportWidth * 0.6;
+                    const next = Math.max(0, chartScrollX - step);
+                    chartScrollRef.current?.scrollTo({ x: next, animated: true });
+                    setChartScrollX(next);
+                  }}
+                >
+                  <Text style={styles.scrollBtnText}>◀</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.scrollBtn, !canScroll && styles.scrollBtnDisabled]}
+                  disabled={!canScroll}
+                  onPress={() => {
+                    const step = viewportWidth * 0.6;
+                    const maxOffset = Math.max(0, chartWidth - viewportWidth);
+                    const next = Math.min(maxOffset, chartScrollX + step);
+                    chartScrollRef.current?.scrollTo({ x: next, animated: true });
+                    setChartScrollX(next);
+                  }}
+                >
+                  <Text style={styles.scrollBtnText}>▶</Text>
+                </TouchableOpacity>
+              </View>
+            </>
           )}
 
           {/* Axis Labels */}
@@ -742,7 +804,8 @@ const styles = StyleSheet.create({
   /* Graph Styles */
   graphContainer: {
     alignItems: "center",
-    marginTop: 10
+    marginTop: 10,
+    width: "100%",
   },
   title: {
     fontSize: 18,
@@ -775,6 +838,32 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 12,
     color: "#000"
+  },
+  chartScroll: {
+    paddingRight: 12,
+  },
+  scrollControls: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    width: "100%",
+    marginTop: 4,
+    marginBottom: 6,
+    paddingRight: 10,
+  },
+  scrollBtn: {
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginLeft: 8,
+  },
+  scrollBtnDisabled: {
+    opacity: 0.5,
+  },
+  scrollBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0f172a",
   },
   xLabel: {
     marginTop: 2,

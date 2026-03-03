@@ -1,20 +1,19 @@
 # Screens and Navigation
 
-## 1. Navigation Map
+## 1. Route Map
 
-### Root
+### Root (`AppNavigator`)
 
-- `AppNavigator`
-  - `Animation`
-  - `Auth` (stack)
-  - `Main` (stack)
+- `Animation` (initial)
+- `Auth` (`AuthStack`)
+- `Main` (`MainStack`)
 
-### AuthStack routes
+### `AuthStack` routes
 
 - `Login`
 - `SignUp`
 - `PageFirst`
-- `Home` (TabNavigator)
+- `Home` (`TabNavigator`)
 - `Graph`
 - `Alarm`
 - `More`
@@ -30,9 +29,9 @@
 - `Profile`
 - `EditProfile`
 
-### MainStack routes
+### `MainStack` routes
 
-- `Home` (TabNavigator)
+- `Home` (`TabNavigator`)
 - `Graph`
 - `Data`
 - `Alarm`
@@ -48,7 +47,7 @@
 - `Settings`
 - `FactorySettings`
 
-### TabNavigator routes
+### `TabNavigator` routes
 
 - `Dashboard`
 - `Home`
@@ -57,172 +56,169 @@
 - `Alarm`
 - `More`
 
-## 2. Page-Wise Behavior and Buttons
+Native tab bar is hidden. Screen UIs render custom bottom wave navigation.
+
+## 2. Screen Behavior
 
 ## AnimationScreen
 
-- Auto checks session:
+- Runs startup animation.
+- Starts fast status prefetch.
+- Session check:
   - session found -> `replace("Main")`
   - no session -> `replace("Auth")`
-- Tap shield logo also triggers session check.
+- Tap on shield also triggers route decision.
 
 ## LoginScreen
 
-- Login button:
-  - validates input
-  - `authenticate(...)`
-  - save session
-  - `replace("Home")`
-- Forgot Password:
-  - opens support email via `mailto:`
+- Requires `email` and `password`.
+- Uses `authenticate(...)`:
+  - hardcoded factory credentials or saved local user.
+- On success:
+  - saves session and `replace("Home")`.
+- Forgot password opens `mailto:` support link.
+
+## SignUpScreen
+
+- Captures name/userId/password/confirm.
+- If userId and password valid/matching:
+  - saves local user/session.
+- Always navigates to Home tab route after button click.
 
 ## DashboardScreen
 
-- Auto-polls every 1 second.
-- Sidebar top-left button -> `Sidebar`.
-- Stat cards navigate to `Home` with filter params:
-  - all / good / issue
-- Bottom custom nav:
-  - Dash/Home/Graph/Alarm/More (via `navigateToTabRoute`)
+- Polls fast status every 1 second.
+- Uses health summary (`total`, `online`, `good`, `issue`).
+- Card tap routes to Home with filter:
+  - `all`, `good`, `issue`.
+- Top-left icon opens sidebar.
 
 ## HomeScreen
 
-- Auto-polls every 1 second.
-- Filter chips: All / Good / Issue.
-- Each device card actions:
-  - Graph icon -> `GraphShow` (device context)
-  - Export icon -> `Export` (device context)
-  - Share icon -> native share sheet
-- Sidebar top-left button -> `Sidebar`.
-- Bottom custom nav available.
+- Polls fast status every 1 second.
+- Uses warm cache on first render.
+- Filter chips:
+  - All, Good, Issue.
+- Device card actions:
+  - Graph icon -> `GraphShow`
+  - Export icon -> `Export`
+  - Share icon -> native share text payload
+- Top-left icon opens sidebar.
 
 ## GraphScreen
 
-- Modes:
-  - Live: 1 second polling using `fetchRealTimeDataMonitor`
-  - History: date-based fetch using paged `fetchAllIoTReadings`
-- History filter uses selected date and strict `tsEpochMs`.
-- Sidebar top-left button -> `Sidebar`.
-- Bottom custom nav available.
+- Date input and picker (`DD-MM-YYYY`).
+- Mode toggle:
+  - `Live`: polls every 1 second using realtime monitor API.
+  - `History`: single-date history query via `fetchAllIoTReadings`.
+- Supports env or press-metric multi-series charts.
+- Displays notices for no data/offline conditions.
 
 ## GraphShowScreen
 
-- Per-device detailed chart.
-- Back button:
-  - tries nested parent `goBack`
-  - fallback reset to `Home`
+- Device-specific graph view (from Home card).
+- Back behavior:
+  - parent-aware `goBack`
+  - fallback reset to `Home`.
 - Modes:
-  - Live: polls every 1 second for selected device
-  - History: date-range with `fetchAllIoTReadings` + `tsEpochMs` filter
-- Download Data button -> `Export` with current device/date params.
+  - `Live`: selected-device polling every 1 second.
+  - `History`: date-range query via `fetchAllIoTReadings`.
+- Download button routes to `Export` with device/date params.
 
 ## ExportScreen
 
-- Back button:
-  - tries nested parent `goBack`
-  - fallback reset to `Home`
-- Exports IoT readings by date range/device filter.
-- Uses `fetchAllIoTReadings` pagination.
-- CSV sort: newest first (`tsEpochMs` descending).
-- Shows preview table (latest rows).
+- Date-range inputs with picker.
+- Uses `fetchAllIoTReadings` with optional `deviceId`.
+- Builds CSV with dynamic parameter columns.
+- Shows in-screen preview of latest rows.
+- Export action opens system share/save flow.
 
 ## AlarmScreen
 
 - Refreshes every 1 second while focused.
-- Data source priority:
+- Data source order:
   1. `ESP32_Alarms`
-  2. synthesized alarm rows from `IoTReadings`
-  3. local AsyncStorage alarms
-- Sidebar top-left button -> `Sidebar`.
-- Bottom custom nav available.
+  2. synthesized alarms from telemetry
+  3. local storage alarms
+- Tabular horizontal-scroll layout.
 
 ## MoreScreen
 
-- Menu buttons:
-  - Profile -> `Profile`
-  - Settings -> `Settings`
-  - Factory Settings -> `FactorySettings`
-  - Notifications -> `Notifications`
-  - Help & Support -> `HelpSupport`
-  - About App -> `AboutApp`
-  - Logout -> clear session + reset to `Auth`
-- Sidebar top-left button -> `Sidebar`.
-- Bottom custom nav available.
-
-## AboutAppScreen
-
-- Back button:
-  - tries parent-aware `goBack`
-  - fallback to tab route `More`
-- Static app description content.
-
-## HelpSupportScreen
-
-- Back button -> `goBack`.
-- Opens:
-  - website URL
-  - phone dialer links
-  - support email composer
-
-## NotificationScreen
-
-- Back button -> `goBack`.
-- Toggle persists in AsyncStorage key `@notification_enabled_v1`.
-
-## ProfileScreen / EditProfileScreen
-
-- Profile:
-  - Back button -> `goBack`
-  - Edit icon -> `EditProfile`
-- EditProfile:
-  - Back button -> `goBack`
-  - Save button -> callback + navigate to `Profile`
+- Menu items:
+  - Profile
+  - Settings
+  - Factory Settings
+  - Notifications
+  - Help & Support
+  - About App
+  - Logout
+- Logout clears session and routes to `Auth`.
 
 ## SidebarScreen
 
-- Back button -> `goBack`
-- Menu buttons:
+- Menu entries:
   - Home
   - Settings
   - Profile
-  - Logout (session clear + auth reset)
+  - Logout
+- Logout clears session and routes to `Auth`.
 
-## SettingsScreen (BLE)
+## NotificationScreen
 
-- Sidebar/menu top-left button.
-- BLE actions:
-  - Scan BLE
-  - Select device
-  - Connect / Disconnect
-  - Read All / Write All params
-  - Set Time
-  - Set thresholds and multipliers
-- Bottom nav buttons:
-  - Home / Dash / Alarm / More
+- Toggle persisted in AsyncStorage key:
+  - `@notification_enabled_v1`
+- Back button uses `goBack`.
+
+## ProfileScreen / EditProfileScreen
+
+- Profile shows local state values.
+- Edit screen updates parent state via callback and routes to Profile.
+- No backend profile API integration.
+
+## SettingsScreen (BLE runtime)
+
+- BLE scan/connect/disconnect.
+- Read all params snapshot.
+- Write single param or all params.
+- Set time (Param 1 epoch from mobile clock).
+- Live BLE telemetry and status history panel.
 
 ## FactorySettingsScreen (BLE protected)
 
-- Back button -> `goBack`
-- Unlock required (`blackstar` in current implementation).
-- BLE actions:
-  - Scan/Connect/Disconnect
-  - Read/Update device ID
-  - Send Wi-Fi credentials
+- Requires unlock password `blackstar`.
+- BLE scan/connect/disconnect.
+- Read and update device ID.
+- Send Wi-Fi SSID/password.
+
+## HelpSupportScreen
+
+- Opens website, phone dialer links, and support mailto link.
+
+## AboutAppScreen
+
+- Parent-aware back navigation with fallback to `More` tab.
+- Static app description text.
 
 ## DataScreen
 
-- One-time fetch on mount using `fetchData`.
-- Shows raw/simple metric list.
-- Does not include bottom nav controls.
+- One-time fetch on mount via `fetchData`.
+- Simple list/debug display of normalized metrics.
+
+## DeviceInformationScreen
+
+- Mock/static UI (not integrated with live API data).
+
+## SplashScreen
+
+- Exists in codebase but not used by current root navigator entry.
 
 ## 3. Navigation Utilities
 
 - `navigateToTabRoute(navigation, routeName)`
-  - handles nested stack/tab routing robustly
+  - robust tab route resolution across nested stacks.
 - `logoutToAuthRoot(navigation)`
-  - resets/navigates to `Auth` route when available
+  - attempts reset to `Auth` from current/parent/grandparent stacks.
 
-## 4. Non-Primary/Legacy Screens
+## 4. Non-Primary Code
 
-- `DeviceInformationScreen` is mostly static/mock UI.
-- `src/screens_1` contains older/duplicate screen set and is not the primary runtime path.
+- `src/screens_1/` contains older duplicate screens and is not used in active route trees.

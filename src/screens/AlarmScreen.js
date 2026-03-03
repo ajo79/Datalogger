@@ -17,7 +17,6 @@ import {
   StyleSheet,
   ScrollView,
   Image,
-  Dimensions,
   ImageBackground,
   TouchableOpacity,
   FlatList,
@@ -28,12 +27,14 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getAlarms } from '../storage/alarmStorage';
 import { fetchDashboardData, fetchESP32Alarms } from '../api/dataService';
 import { navigateToTabRoute } from '../navigation/navHelpers';
-
-const { width } = Dimensions.get('window');
+import { useResponsiveLayout } from '../theme/responsive';
 
 export default function AlarmScreen() {
   const navigation = useNavigation();
+  const ui = useResponsiveLayout();
+  const screenWidth = ui.width;
   const navigateToTab = (route) => navigateToTabRoute(navigation, route);
+  const tableMinWidth = Math.max(screenWidth, 910);
   const [alarmData, setAlarmData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -206,14 +207,61 @@ export default function AlarmScreen() {
 
     return (
     <View style={styles.row}>
-        <Text style={styles.cellSrNo}>{index + 1}</Text>
-        <Text style={styles.cellDevice}>{item.deviceId || "--"}</Text>
-        <Text style={styles.cellDeviceName}>{deviceName}</Text>
-        <Text style={styles.cellMessage}>{message}</Text>
-        <Text style={styles.cellDate}>{dateTime}</Text>
-        <Text style={styles.cellStatus}>{status}</Text>
-        <Text style={styles.cellAckBy}>{ackBy}</Text>
-        <Text style={styles.cellAckDate}>{ackDateTime}</Text>
+        <Text
+          style={[styles.cellSrNo, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {index + 1}
+        </Text>
+        <Text
+          style={[styles.cellDevice, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {item.deviceId || "--"}
+        </Text>
+        <Text
+          style={[styles.cellDeviceName, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={2}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {deviceName}
+        </Text>
+        <Text
+          style={[styles.cellMessage, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={2}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {message}
+        </Text>
+        <Text
+          style={[styles.cellDate, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {dateTime}
+        </Text>
+        <Text
+          style={[styles.cellStatus, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {status}
+        </Text>
+        <Text
+          style={[styles.cellAckBy, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {ackBy}
+        </Text>
+        <Text
+          style={[styles.cellAckDate, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          {ackDateTime}
+        </Text>
       </View>
     );
   };
@@ -224,7 +272,7 @@ export default function AlarmScreen() {
       <Image source={require('../../assets/images/WaveTop.png')} style={styles.headerImage} />
 
       {/* Top Header Bar */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
         {/* Left Sidebar Toggle */}
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Sidebar')}>
@@ -236,25 +284,33 @@ export default function AlarmScreen() {
         </View>
 
         {/* Screen Title */}
-        <Text style={styles.headerText}>ALARM</Text>
+        <Text
+          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          ALARM
+        </Text>
 
         {/* Right Spacer for Symmetry */}
         <View style={styles.headerLeft} />
       </View>
 
       {/* --- Data Table Section --- */}
-      <ScrollView style={{ marginBottom: 90 }} horizontal>
-        <View style={styles.tableContainer}>
+      <ScrollView style={styles.tableScrollArea} horizontal>
+        <View style={[styles.tableContainer, { minWidth: tableMinWidth }]}>
           {/* Table Header */}
           <View style={[styles.row, styles.headerRow]}>
-            <Text style={[styles.cellSrNo, styles.headerCell]}>Sr. No.</Text>
-            <Text style={[styles.cellDevice, styles.headerCell]}>Device ID</Text>
-            <Text style={[styles.cellDeviceName, styles.headerCell]}>Device Name</Text>
-            <Text style={[styles.cellMessage, styles.headerCell]}>Message</Text>
-            <Text style={[styles.cellDate, styles.headerCell]}>Alarm Date Time</Text>
-            <Text style={[styles.cellStatus, styles.headerCell]}>Status</Text>
-            <Text style={[styles.cellAckBy, styles.headerCell]}>Ack By</Text>
-            <Text style={[styles.cellAckDate, styles.headerCell]}>Ack Date Time</Text>
+            <Text style={[styles.cellSrNo, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Sr. No.</Text>
+            <Text style={[styles.cellDevice, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Device ID</Text>
+            <Text style={[styles.cellDeviceName, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Device Name</Text>
+            <Text style={[styles.cellMessage, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Message</Text>
+            <Text style={[styles.cellDate, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Alarm Date Time</Text>
+            <Text style={[styles.cellStatus, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Status</Text>
+            <Text style={[styles.cellAckBy, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Ack By</Text>
+            <Text style={[styles.cellAckDate, styles.headerCell, { fontSize: ui.font(12, { min: 10, max: 13 }) }]}>Ack Date Time</Text>
           </View>
 
           {/* Table Rows */}
@@ -280,28 +336,63 @@ export default function AlarmScreen() {
       >
         <View style={styles.navContainer}>
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Dashboard')}>
-            <Image source={require('../../assets/images/GraphIcon.png')} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>DASH</Text>
+            <Image source={require('../../assets/images/GraphIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              DASH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Home')}>
-            <Image source={require('../../assets/images/HomeIcon.png')} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>HOME</Text>
+            <Image source={require('../../assets/images/HomeIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              HOME
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Graph')}>
-            <Image source={require('../../assets/images/GraphIcon.png')} style={styles.navIcon1} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>GRAPH</Text>
+            <Image source={require('../../assets/images/GraphIcon.png')} style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              GRAPH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Alarm')}>
-            <Image source={require('../../assets/images/AlarmIcon.png')} style={styles.navIcon2} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>ALARM</Text>
+            <Image source={require('../../assets/images/AlarmIcon.png')} style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              ALARM
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('More')}>
-            <Image source={require('../../assets/images/MoreIcon.png')} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>MORE</Text>
+            <Image source={require('../../assets/images/MoreIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              MORE
+            </Text>
           </TouchableOpacity>
         </View>
       </ImageBackground>
@@ -350,16 +441,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerText: {
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
     flex: 1,
+    paddingHorizontal: 8,
   },
 
   /* Table Layout */
+  tableScrollArea: {
+    marginBottom: 90,
+  },
   tableContainer: {
-    minWidth: Math.max(width, 900), // Ensure enough width for all columns; horizontal scroll handles overflow
+    paddingRight: 6, // keeps right-most column readable near edge on small screens
   },
   row: {
     flexDirection: 'row',

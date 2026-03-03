@@ -21,7 +21,6 @@ import {
   Pressable,
   ScrollView,
   Image,
-  Dimensions,
   TextInput,
   ImageBackground,
   SafeAreaView,
@@ -32,20 +31,16 @@ import { fetchRealTimeDataMonitor, fetchAllIoTReadings } from '../api/dataServic
 import { computeIsOnline } from "../utils/deviceHealth";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { navigateToTabRoute } from "../navigation/navHelpers";
+import { useResponsiveLayout } from "../theme/responsive";
 
-const { width } = Dimensions.get('window');
 const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll space
 const MAX_GRAPH_POINTS = 100;
-
-// Dummy data for visualization purposes
-const data = [
-  { srNo: 1, deviceId: 'GT001', message: 'Temperature High', dateTime: '12-10-2024 10:30 AM', status: 'Alarm' },
-  { srNo: 2, deviceId: 'GT002', message: 'Humidity Low', dateTime: '12-10-2024 11:00 AM', status: 'Alarm' },
-  { srNo: 3, deviceId: 'GT001', message: 'System Normal', dateTime: '12-10-2024 12:00 PM', status: 'Online' },
-  { srNo: 4, deviceId: 'GT003', message: 'Connection Lost', dateTime: '12-10-2024 01:15 PM', status: 'Offline' },
-];
+const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
+const LIVE_POLL_MS = 5000;
 
 export default function GraphScreen({ navigation }) {
+  const ui = useResponsiveLayout();
+  const screenWidth = ui.width;
   const navigateToTab = (route) => navigateToTabRoute(navigation, route);
 // --- State for Date Management ---
 const getToday = () => {
@@ -200,17 +195,16 @@ const handleManualDate = (text) => {
     return map[String(pid)] || `rgba(255, ${100 + idx * 40}, 0, ${opacity})`;
   };
 
-  const isPressDevice = (item) => extractPressMetrics(item).length > 0;
-
   // --- Real-time Chart Data (Multi-Device) ---
   // Structure: { [deviceId]: { labels: [], temp: [], hum: [] } }
   const [deviceHistory, setDeviceHistory] = useState({});
   const scrollRefs = useRef({});
   const [scrollOffsets, setScrollOffsets] = useState({});
-  const [showDotValues, setShowDotValues] = useState(false);
   const [liveNotice, setLiveNotice] = useState("");
   const [offlineDevices, setOfflineDevices] = useState([]);
   const [historyNotice, setHistoryNotice] = useState("");
+  const offlineStreakRef = useRef({});
+  const lastLiveTsRef = useRef({});
   const offlineSummary = useMemo(() => {
     if (!offlineDevices.length) return "";
     if (offlineDevices.length <= 2) return offlineDevices.join(", ");
@@ -220,6 +214,7 @@ const handleManualDate = (text) => {
   useEffect(() => {
     // Only poll if in Live Mode
     if (viewMode !== 'live') return;
+    lastLiveTsRef.current = {};
 
     const pollLive = async () => {
       try {
@@ -227,8 +222,24 @@ const handleManualDate = (text) => {
         if (raw && Array.isArray(raw)) {
           // Items are already normalized in dataService.
           const processed = raw;
-          const onlineItems = processed.filter((source) => computeIsOnline(source));
-          const offlineItems = processed.filter((source) => !computeIsOnline(source));
+          const nextOfflineStreak = {};
+          const onlineItems = [];
+          const offlineItems = [];
+
+          processed.forEach((source) => {
+            const deviceId = String(source?.deviceId || "Unknown");
+            const isFresh = computeIsOnline(source);
+            const prevStreak = Number(offlineStreakRef.current[deviceId] || 0);
+            const streak = isFresh ? 0 : prevStreak + 1;
+            nextOfflineStreak[deviceId] = streak;
+            const isOnlineStable = isFresh || streak < OFFLINE_STALE_HYSTERESIS_COUNT;
+            if (isOnlineStable) {
+              onlineItems.push(source);
+            } else {
+              offlineItems.push(source);
+            }
+          });
+          offlineStreakRef.current = nextOfflineStreak;
 
           const offlineLabels = offlineItems.map(src => {
             const did = src?.deviceId ? String(src.deviceId) : "Unknown";
@@ -244,15 +255,25 @@ const handleManualDate = (text) => {
           }
 
           if (!onlineItems.length) {
-            setLiveNotice("All devices are offline. Showing latest values.");
-          } else {
-            setLiveNotice("");
+            setLiveNotice("All devices are offline. Live graph shows online devices only.");
+            setDeviceHistory({});
+            return;
           }
+          setLiveNotice("");
 
           setDeviceHistory(prevHistory => {
-            const nextHistory = { ...prevHistory };
+            const onlineIds = new Set(
+              onlineItems.map((source) => String(source?.deviceId || "Unknown"))
+            );
+            const nextHistory = {};
 
-            processed.forEach(source => {
+            Object.entries(prevHistory || {}).forEach(([id, history]) => {
+              if (onlineIds.has(id)) {
+                nextHistory[id] = history;
+              }
+            });
+
+            onlineItems.forEach(source => {
               const deviceId = String(source.deviceId || "Unknown");
               const pressList = extractPressMetrics(source);
               const envVals = getEnvValues(source);
@@ -266,6 +287,8 @@ const handleManualDate = (text) => {
               const isPress = hasPress && !hasEnv;
               const tsEpochMs = getTsEpochMs(source);
               if (tsEpochMs === undefined) return;
+              if (lastLiveTsRef.current[deviceId] === tsEpochMs) return;
+              lastLiveTsRef.current[deviceId] = tsEpochMs;
               const timeLabel = formatTimeLabel(tsEpochMs);
 
               // Initialize if new device
@@ -316,7 +339,7 @@ const handleManualDate = (text) => {
 
     // Immediate first fetch, then periodic refresh.
     pollLive();
-    const interval = setInterval(pollLive, 1000);
+    const interval = setInterval(pollLive, LIVE_POLL_MS);
 
     return () => clearInterval(interval);
   }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -473,22 +496,6 @@ const handleManualDate = (text) => {
     return unsubscribe;
   }, [navigation]);
 
-  // --- Render Helpers ---
-
-  /**
-   * Renders a single row in the data table.
-   * @param {object} item - The data record
-   */
-  const renderRow = (item) => (
-    <View key={item.srNo} style={styles.row}>
-      <Text style={[styles.cellSrNo, styles.cellText]}>{item.srNo}</Text>
-      <Text style={[styles.cellDevice, styles.cellText]}>{item.deviceId}</Text>
-      <Text style={[styles.cellMessage, styles.cellText]}>{item.message}</Text>
-      <Text style={[styles.cellDate, styles.cellText]}>{item.dateTime}</Text>
-      <Text style={[styles.cellStatus, styles.cellText]}>{item.status}</Text>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Header Wave Image */}
@@ -498,7 +505,7 @@ const handleManualDate = (text) => {
       />
 
       {/* Top Header Bar */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
         {/* Left Side: Sidebar Button */}
         <View style={styles.headerLeft}>
           <TouchableOpacity
@@ -513,7 +520,15 @@ const handleManualDate = (text) => {
         </View>
 
         {/* Center Title */}
-        <Text style={styles.headerText}>GRAPH</Text>
+        <Text
+          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          GRAPH
+        </Text>
 
         {/* Right Side: Spacer/Placeholder */}
         <View style={styles.headerLeft} />
@@ -524,14 +539,20 @@ const handleManualDate = (text) => {
 
         {/* --- Date Filter Section --- */}
         <View style={styles.dateFilterSingle}>
-          <Text style={styles.label}>Date</Text>
+          <Text
+            style={[styles.label, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+            maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+          >
+            Date
+          </Text>
           <View style={styles.dateInputContainer}>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
               value={selectedDate}
               onChangeText={handleManualDate}
               keyboardType="numeric"
               maxLength={10}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
             />
             <TouchableOpacity onPress={showDatePicker}>
               <Image
@@ -545,18 +566,32 @@ const handleManualDate = (text) => {
         {/* --- Mode Selector --- */}
         <View style={styles.modeToggleRow}>
           <TouchableOpacity
-            style={[styles.modeBtn, viewMode === 'live' && styles.modeBtnActive]}
+            style={[styles.modeBtn, ui.isVeryCompact && styles.modeBtnCompact, viewMode === 'live' && styles.modeBtnActive]}
             onPress={handleModeLive}
           >
-            <Text style={[styles.modeBtnText, viewMode === 'live' && styles.modeBtnTextActive]}>
+            <Text
+              style={[
+                styles.modeBtnText,
+                { fontSize: ui.font(14, { min: 12, max: 15 }) },
+                viewMode === 'live' && styles.modeBtnTextActive
+              ]}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
               Live
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.modeBtn, viewMode === 'history' && styles.modeBtnActive]}
+            style={[styles.modeBtn, ui.isVeryCompact && styles.modeBtnCompact, viewMode === 'history' && styles.modeBtnActive]}
             onPress={handleModeHistory}
           >
-            <Text style={[styles.modeBtnText, viewMode === 'history' && styles.modeBtnTextActive]}>
+            <Text
+              style={[
+                styles.modeBtnText,
+                { fontSize: ui.font(14, { min: 12, max: 15 }) },
+                viewMode === 'history' && styles.modeBtnTextActive
+              ]}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
               History
             </Text>
           </TouchableOpacity>
@@ -628,8 +663,8 @@ const handleManualDate = (text) => {
           if (!history.labels.length) return null;
 
           const labels = history.labels.length ? history.labels : ["0"];
-          const chartWidth = Math.max(width - 20, labels.length * MIN_POINT_WIDTH);
-          const viewportWidth = width - 20;
+          const viewportWidth = Math.max(screenWidth - 24, 260);
+          const chartWidth = Math.max(viewportWidth, labels.length * MIN_POINT_WIDTH);
           const canScroll = chartWidth > viewportWidth;
 
           let datasets = [];
@@ -664,7 +699,14 @@ const handleManualDate = (text) => {
 
           return (
             <View key={deviceId} style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>{deviceId} Trends</Text>
+              <Text
+                style={[styles.chartTitle, { fontSize: ui.font(18, { min: 15, max: 19 }) }]}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+              >
+                {deviceId} Trends
+              </Text>
 
               <ScrollView
                 horizontal
@@ -770,9 +812,16 @@ const handleManualDate = (text) => {
           >
             <Image
               source={require('../../assets/images/GraphIcon.png')}
-              style={styles.navIcon}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
             />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>DASH</Text>
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              DASH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -781,9 +830,16 @@ const handleManualDate = (text) => {
           >
             <Image
               source={require('../../assets/images/HomeIcon.png')}
-              style={styles.navIcon}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
             />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>HOME</Text>
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              HOME
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -792,9 +848,16 @@ const handleManualDate = (text) => {
           >
             <Image
               source={require('../../assets/images/GraphIcon.png')}
-              style={styles.navIcon1}
+              style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]}
             />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>GRAPH</Text>
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              GRAPH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -803,9 +866,16 @@ const handleManualDate = (text) => {
           >
             <Image
               source={require('../../assets/images/AlarmIcon.png')}
-              style={styles.navIcon2}
+              style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]}
             />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>ALARM</Text>
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              ALARM
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -814,9 +884,16 @@ const handleManualDate = (text) => {
           >
             <Image
               source={require('../../assets/images/MoreIcon.png')}
-              style={styles.navIcon}
+              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
             />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>MORE</Text>
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              MORE
+            </Text>
           </TouchableOpacity>
         </View>
       </ImageBackground>
@@ -860,16 +937,17 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: {
     width: 44,
-    height: 64,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerText: {
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
     flex: 1,
+    paddingHorizontal: 8,
   },
 
   /* Scrollable Content */
@@ -890,7 +968,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     paddingHorizontal: 5,
     marginTop: 5,
-    width: width * 0.9,
+    width: '100%',
     height: 40,
     backgroundColor: '#f9f9f9',
   },
@@ -931,7 +1009,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   modeBtn: {
-    minWidth: 110,
+    minWidth: 0,
+    flex: 1,
+    maxWidth: 180,
     paddingVertical: 9,
     paddingHorizontal: 18,
     borderRadius: 18,
@@ -941,6 +1021,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modeBtnCompact: {
+    marginHorizontal: 4,
+    paddingHorizontal: 10,
   },
   modeBtnActive: {
     backgroundColor: '#0b5fff',
@@ -1164,11 +1248,12 @@ const styles = StyleSheet.create({
 
   /* Chart Styles */
   chartContainer: {
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginVertical: 10,
+    marginHorizontal: 10,
     backgroundColor: '#fff',
     borderRadius: 10,
-    padding: 5,
+    padding: 8,
     borderWidth: 1,
     borderColor: '#ccc',
   },
@@ -1209,5 +1294,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
     color: '#333',
+    textAlign: 'center',
   },
 });

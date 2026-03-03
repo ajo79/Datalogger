@@ -8,8 +8,8 @@
  */
 
 // If a reading is older than this, mark device offline.
-// Reduced to improve online/offline detection responsiveness.
-export const OFFLINE_AFTER_MS = 60000; // 60 seconds
+// Keep this tolerant to short backend/network jitter.
+export const OFFLINE_AFTER_MS = 30000; // 30 seconds
 const MIN_OFFLINE_AFTER_MS = 30000;
 const MAX_OFFLINE_AFTER_MS = 180000;
 
@@ -68,7 +68,7 @@ function resolveOfflineAfterMs(item, fallbackMs) {
       merged?.reportingIntervalMs
   );
   if (Number.isFinite(intervalMs) && intervalMs > 0) {
-    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalMs * 3));
+    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalMs * 5));
   }
 
   const intervalSec = Number(
@@ -79,7 +79,7 @@ function resolveOfflineAfterMs(item, fallbackMs) {
       merged?.reportingIntervalSec
   );
   if (Number.isFinite(intervalSec) && intervalSec > 0) {
-    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalSec * 3000));
+    return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, intervalSec * 5000));
   }
 
   return Math.min(MAX_OFFLINE_AFTER_MS, Math.max(MIN_OFFLINE_AFTER_MS, fallbackMs));

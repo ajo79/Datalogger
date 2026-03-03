@@ -20,18 +20,29 @@ import {
   Pressable,
 } from 'react-native';
 import { getSession } from '../storage/userStorage';
+import { prefetchFastDeviceStatus } from '../api/dataService';
+
+const STARTUP_PREFETCH_TIMEOUT_MS = 8000;
+const STARTUP_PREFETCH_WAIT_MS = 3000;
 
 const AnimationScreen = ({ navigation }) => {
   // --- Animation Values ---
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
+  const prefetchPromiseRef = useRef(null);
+  const routeOnceRef = useRef(false);
 
   // Letter processing for "BIOT"
   const letters = 'BIOT'.split('');
   const letterAnimations = useRef(letters.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
+    // Warm device status while splash animation is running.
+    prefetchPromiseRef.current = prefetchFastDeviceStatus({
+      timeoutMs: STARTUP_PREFETCH_TIMEOUT_MS,
+    });
+
     // Start main parallel animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -82,15 +93,26 @@ const AnimationScreen = ({ navigation }) => {
     outputRange: ['0deg', '360deg'],
   });
 
+  const waitForPrefetch = async () => {
+    const promise = prefetchPromiseRef.current;
+    if (!promise) return;
+    await Promise.race([
+      promise.catch(() => null),
+      new Promise((resolve) => setTimeout(resolve, STARTUP_PREFETCH_WAIT_MS)),
+    ]);
+  };
 
   /**
    * Checks if user is logged in via userStorage.
    * Navigates to appropriate stack.
    */
   const checkLoginStatus = async () => {
+    if (routeOnceRef.current) return;
+    routeOnceRef.current = true;
     try {
       const session = await getSession();
       if (session && session.userId) {
+        await waitForPrefetch();
         navigation.replace('Main'); // Go to home/main
         return;
       }

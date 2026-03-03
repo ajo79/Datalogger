@@ -2,120 +2,132 @@
 
 ## 1. Overview
 
-`Datalogger` is a React Native app that consumes IoT telemetry through a single AWS API Gateway endpoint and renders:
+`Datalogger` is a React Native app for BIOT telemetry monitoring with:
 
-- dashboard and card views
-- live/history graphs
-- alarm history
+- live and history data views
+- health dashboard
+- alarm table
 - CSV export
-- BLE-based settings/factory configuration
+- BLE runtime and factory configuration
 
-The app currently targets the BIOT telemetry envelope (`schemaVersion=1`, `msgType=telemetry`) and filters out non-matching formats in most core views.
+## 2. Runtime Flow
 
-## 2. High-Level Data Flow
+1. `App.tsx` -> `SafeAreaProvider` -> `AppNavigator`
+2. `AppNavigator` initial route: `Animation`
+3. `AnimationScreen`:
+   - starts splash animation
+   - prefetches fast status data
+   - checks session (`getSession`)
+   - routes to `Main` or `Auth`
+4. `AuthStack` and `MainStack` both provide app routes.
+5. `TabNavigator` logical tabs:
+   - `Dashboard`, `Home`, `Data`, `Graph`, `Alarm`, `More`
+   - native tab bar hidden; custom wave nav is rendered by screens
 
-1. ESP32 firmware publishes MQTT payloads to AWS IoT.
-2. AWS IoT Rules write records into DynamoDB tables (handled server-side).
-3. Mobile app calls API Gateway endpoint:
-   - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
-4. Lambda response is normalized in `src/api/dataService.js`.
-5. UI screens consume normalized model via `fetchData`, `fetchRealTimeDataMonitor`, `fetchAllIoTReadings`, and `fetchESP32Alarms`.
+## 3. Data Layer
 
-Important: the mobile app does not read DynamoDB directly.
+All API logic is centralized in `src/api/dataService.js`.
 
-## 3. App Structure
+- Endpoint:
+  - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
+- Request timeout:
+  - default `60000` ms
+  - fast status path `5000` ms
+- Fast status cache:
+  - in-memory, max age `30000` ms
+- Reads only (GET); no write API calls in mobile app.
 
-- Entry:
-  - `App.tsx` -> `SafeAreaProvider` -> `AppNavigator`
-- Root navigation:
-  - `src/navigation/AppNavigator.js`
-  - Route tree: `Animation` -> (`Auth` or `Main`)
-- Stack/navigation layers:
-  - `AuthStack`: login + app routes
-  - `MainStack`: app routes (for already-signed-in flow)
-  - `TabNavigator`: logical tabs; default tab bar hidden
-- Data services:
-  - `src/api/dataService.js`
-- Health classification:
-  - `src/utils/deviceHealth.js`
-- Storage:
-  - `src/storage/userStorage.js`, `src/storage/alarmStorage.js`
+### Core service functions
 
-## 4. Navigation Architecture
+- `fetchDashboardData`
+- `fetchData`
+- `fetchRealTimeDataMonitor`
+- `fetchFastDeviceStatus`
+- `fetchAllIoTReadings`
+- `fetchESP32Alarms`
 
-The tab bar is intentionally hidden (`tabBar={() => null}`) and each screen draws a custom bottom wave nav UI.
+### Normalization
 
-Cross-navigator tab routing is centralized by:
+- handles Lambda proxy `body` and direct JSON
+- unmarshals DynamoDB typed attributes
+- flattens `payload`
+- normalizes BIOT parameters and compat fields
+- derives `tsServerMs`, `tsDeviceMs`, and `ts`
+- marks BIOT-valid rows with `_schemaValid`
 
-- `navigateToTabRoute` in `src/navigation/navHelpers.js`
+## 4. Health Model
 
-This helper attempts route resolution through current navigator, parent, and grandparent stacks to avoid broken tab navigation.
+In `src/utils/deviceHealth.js`:
 
-## 5. Data Service Architecture
+- `OFFLINE_AFTER_MS = 30000`
+- dynamic offline threshold may override this using device publish interval
+- threshold clamp range: `30000..180000`
+- classification:
+  - `good`: online and no common issue/alarm
+  - `issue`: offline or common issue/alarm
 
-`src/api/dataService.js` responsibilities:
+## 5. Polling Model
 
-- build query URLs
-- execute GET with `AbortController` timeout (60 seconds)
-- parse Lambda proxy or direct JSON format
-- unmarshal DynamoDB attribute maps when required
-- flatten legacy `payload` object/string
-- normalize BIOT parameters
-- derive canonical fields:
-  - `tsServerMs`, `tsDeviceMs`, `ts`
-  - `temperature`, `humidity`, `wifi_strength`, `Common Alarm`
-- apply schema validation (`_schemaValid`) for BIOT telemetry
-- merge `RealTimeDataMonitor` records with IoT fallback by `deviceId`
-- paginate IoT history through cursor tokens (`fetchAllIoTReadings`)
+- Home: `1000` ms
+- Dashboard: `1000` ms
+- Graph live mode: `1000` ms
+- GraphShow live mode: `1000` ms
+- Alarm (focused): `1000` ms
+- Settings screen also updates local mobile epoch display every `1000` ms
 
-## 6. Timestamp Strategy
+## 6. BLE Architecture
 
-- Online/offline freshness: primarily server ingestion `tsServerMs` (fallback to device time).
-- History/export filters: strict `tsEpochMs`/`ts_epoch_ms`.
-- CSV sort order: newest first (`desc` by `tsEpochMs`).
+### Runtime settings (`SettingsScreen`)
 
-## 7. Refresh and Polling
+- scan/connect/disconnect BLE
+- read all parameters snapshot
+- write param 1..9 (single and write-all)
+- monitor:
+  - status characteristic
+  - all-params characteristic
+  - live telemetry characteristic
 
-Current polling intervals:
+### Factory settings (`FactorySettingsScreen`)
 
-- Home: 1 second
-- Dashboard: 1 second
-- Graph live mode: 1 second
-- GraphShow live mode: 1 second
-- Alarm: 1 second
+- unlock gate password: `blackstar`
+- scan/connect/disconnect BLE
+- read/update device ID characteristic
+- write Wi-Fi SSID/password characteristics
 
-API timeout for each request:
+### Contract/codec
 
-- 60 seconds (`fetchText` timeout)
+- UUID map: `src/ble/bleContract.js`
+- payload encoding/decoding: `src/ble/bleCodec.js`
 
-## 8. Device Health Logic
+## 7. Storage/Auth
 
-`src/utils/deviceHealth.js`:
+- `userStorage.js`
+  - `@user_credentials_v1`
+  - `@user_session_v1`
+- `authService.js`
+  - hardcoded factory credentials `Company_A / 1234`
+  - fallback local user validation
+- `alarmStorage.js`
+  - `@alarm_logs_v1`
+  - max 500 rows
 
-- `OFFLINE_AFTER_MS = 60000`
-- Device is offline when timestamp age exceeds threshold.
-- Common alarm extracted from `status.overallAlarm` aliases and legacy fields.
-- Classification:
-  - `good`: online + no common issue
-  - `issue`: offline or common issue
+## 8. Native Layer
 
-## 9. BLE Subsystem
+### Android
 
-Screens:
+- `minSdkVersion=24`, `targetSdkVersion=36`, `compileSdkVersion=36`
+- BLE permissions:
+  - `BLUETOOTH_SCAN`
+  - `BLUETOOTH_CONNECT`
+  - legacy location/Bluetooth permissions for <= API 30
 
-- `SettingsScreen`: runtime BLE parameter read/write + telemetry monitor
-- `FactorySettingsScreen`: protected BLE config for device ID and Wi-Fi credentials
+### iOS
 
-Services:
+- deployment target: 15.1
+- Info.plist includes Bluetooth and location usage descriptions
+- ATS keeps arbitrary loads disabled
 
-- `react-native-ble-plx`
-- Contract/codec:
-  - `src/ble/bleContract.js`
-  - `src/ble/bleCodec.js`
+## 9. Known Non-Primary Code
 
-## 10. Current Known Architectural Risks
-
-- API base URL is hardcoded in app code.
-- Dashboard mode can still be heavy if backend returns full scans.
-- Local auth/session is not production-grade security.
-- Some screens are legacy/demo (`DeviceInformationScreen`, `src/screens_1`).
+- `src/screens_1/` is legacy and not used by active navigator routes.
+- `SplashScreen.js` exists but current entry route is `AnimationScreen`.

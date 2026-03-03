@@ -20,14 +20,18 @@ import {
   ImageBackground,
   StyleSheet,
   Alert,
-  SafeAreaView
+  SafeAreaView,
 } from 'react-native';
 
 import IMAGES from "../constants/images";
 import { clearSession } from '../storage/userStorage';
 import { logoutToAuthRoot, navigateToTabRoute } from '../navigation/navHelpers';
+import { useResponsiveLayout } from '../theme/responsive';
 
 export default function MoreScreen({ navigation }) {
+  const ui = useResponsiveLayout();
+  const isNarrow = ui.isCompact;
+
   const logoutToAuth = async () => {
     await clearSession();
     logoutToAuthRoot(navigation);
@@ -100,7 +104,7 @@ export default function MoreScreen({ navigation }) {
       {/* Top Header */}
       <Image source={IMAGES.WaveTop} style={styles.headerImage} />
 
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
         {/* Left Sidebar Button */}
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Sidebar')}>
@@ -109,18 +113,43 @@ export default function MoreScreen({ navigation }) {
         </View>
 
         {/* Screen Title */}
-        <Text style={styles.headerText}>MORE</Text>
+        <Text
+          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+        >
+          MORE
+        </Text>
 
         {/* Right Spacer */}
         <View style={styles.headerLeft} />
       </View>
 
       {/* Menu Items List */}
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={[styles.container, isNarrow && styles.containerNarrow]}>
         {menuItems.map(item => (
-          <TouchableOpacity key={item.id} style={styles.menuItem} onPress={() => handleMenuPress(item)}>
-            <Image source={item.icon} style={styles.customIcon} />
-            <Text style={styles.menuText}>{item.title}</Text>
+          <TouchableOpacity
+            key={item.id}
+            style={[styles.menuItem, isNarrow && styles.menuItemNarrow]}
+            onPress={() => handleMenuPress(item)}
+          >
+            <Image
+              source={item.icon}
+              style={[styles.customIcon, { width: ui.size(24, { min: 20, max: 26 }), height: ui.size(24, { min: 20, max: 26 }) }]}
+            />
+            <Text
+              style={[
+                styles.menuText,
+                isNarrow && styles.menuTextNarrow,
+                { fontSize: ui.font(18, { min: 14, max: 19 }) },
+              ]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              {item.title}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -129,28 +158,63 @@ export default function MoreScreen({ navigation }) {
         <ImageBackground source={IMAGES.WaveBottom} style={styles.bottomNavBg} resizeMode="stretch">
           <View style={styles.navContainer}>
             <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Dashboard")}>
-              <Image source={IMAGES.GraphIcon} style={styles.navIcon} />
-              <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>DASH</Text>
+              <Image source={IMAGES.GraphIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+              <Text
+                style={[styles.navText, { fontSize: ui.navTextSize }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+              >
+                DASH
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Home")}>
-              <Image source={IMAGES.HomeIcon} style={styles.navIcon} />
-              <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>HOME</Text>
+              <Image source={IMAGES.HomeIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+              <Text
+                style={[styles.navText, { fontSize: ui.navTextSize }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+              >
+                HOME
+              </Text>
             </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Graph")}>
-            <Image source={IMAGES.GraphIcon} style={styles.navIcon1} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>GRAPH</Text>
+            <Image source={IMAGES.GraphIcon} style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              GRAPH
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Alarm")}>
-            <Image source={IMAGES.AlarmIcon} style={styles.navIcon2} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>ALARM</Text>
+            <Image source={IMAGES.AlarmIcon} style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              ALARM
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("More")}>
-            <Image source={IMAGES.MoreIcon} style={styles.navIcon} />
-            <Text style={styles.navText} numberOfLines={1} adjustsFontSizeToFit>MORE</Text>
+            <Image source={IMAGES.MoreIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
+            <Text
+              style={[styles.navText, { fontSize: ui.navTextSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              MORE
+            </Text>
           </TouchableOpacity>
         </View>
       </ImageBackground>
@@ -199,17 +263,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerText: {
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
-    flex: 1
+    flex: 1,
+    paddingHorizontal: 8,
   },
 
   /* Menu List */
   container: {
     padding: 20,
     paddingBottom: 120 // Space for bottom nav
+  },
+  containerNarrow: {
+    paddingHorizontal: 12,
   },
   menuItem: {
     flexDirection: "row",
@@ -222,7 +290,12 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 5,
-    elevation: 3
+    elevation: 3,
+    minHeight: 56,
+  },
+  menuItemNarrow: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   customIcon: {
     width: 24,
@@ -232,7 +305,12 @@ const styles = StyleSheet.create({
   },
   menuText: {
     fontSize: 18,
-    color: "#333"
+    color: "#333",
+    flex: 1,
+    minWidth: 0,
+  },
+  menuTextNarrow: {
+    fontSize: 16,
   },
 
   /* Bottom Navigation */

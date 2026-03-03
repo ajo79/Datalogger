@@ -20,6 +20,7 @@
 - Do not parse raw response directly in screens when a service helper exists.
 - For history/export date ranges, use `tsEpochMs` only.
 - For online/offline freshness, rely on normalized `tsServerMs`/`ts`.
+- Do not add direct telemetry upload calls from screens; mobile app is currently read-only for AWS API.
 
 ## 4. Navigation Standards
 
@@ -41,6 +42,7 @@
 - Always clear intervals/timeouts in cleanup.
 - Prevent overlapping network calls with in-flight guards.
 - Avoid creating duplicate polling loops on re-renders.
+- Keep high-frequency polling (`1000` ms) only where UX requires it.
 
 ## 7. Error Handling
 
