@@ -37,25 +37,34 @@ const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll space
 const MAX_GRAPH_POINTS = 100;
 const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
 const LIVE_POLL_MS = 5000;
+const TOOLTIP_WIDTH = 170;
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function GraphScreen({ navigation }) {
   const ui = useResponsiveLayout();
   const screenWidth = ui.width;
   const navigateToTab = (route) => navigateToTabRoute(navigation, route);
 // --- State for Date Management ---
-const getToday = () => {
+const formatDate = (d) =>
+  `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+
+const getToday = () => formatDate(new Date());
+const getSevenDaysAgo = () => {
   const d = new Date();
-  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+  d.setDate(d.getDate() - 7);
+  return formatDate(d);
 };
 
-const [selectedDate, setSelectedDate] = useState(getToday()); // Default to today
+const [startDate, setStartDate] = useState(getSevenDaysAgo());
+const [endDate, setEndDate] = useState(getToday());
+const [historyDeviceId, setHistoryDeviceId] = useState("");
 const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+const [activeDateField, setActiveDateField] = useState("start"); // "start" | "end"
 
   // --- Date Picker Handlers ---
 
-  /**
- */
-const showDatePicker = () => {
+const showDatePickerFor = (field = "start") => {
+  setActiveDateField(field);
   setDatePickerVisibility(true);
 };
 
@@ -71,12 +80,12 @@ const showDatePicker = () => {
    * Formats date as DD-MM-YYYY.
    */
 const handleConfirm = (date) => {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  const formattedDate = `${day}-${month}-${year}`;
-
-  setSelectedDate(formattedDate);
+  const formattedDate = formatDate(date);
+  if (activeDateField === "end") {
+    setEndDate(formattedDate);
+  } else {
+    setStartDate(formattedDate);
+  }
   hideDatePicker();
 };
 
@@ -120,10 +129,16 @@ const handleConfirm = (date) => {
    * Handles text changes in the date input fields.
    * Allows manual typing with simple regex filtering.
    */
-const handleManualDate = (text) => {
+const handleManualDate = (field, text) => {
   const cleaned = text.replace(/[^0-9-]/g, '');
-  setSelectedDate(cleaned);
+  if (field === "end") {
+    setEndDate(cleaned);
+  } else {
+    setStartDate(cleaned);
+  }
 };
+
+  const normalizeId = (id) => String(id || "").trim().toLowerCase();
 
   // --- Helpers ---
   const pad2 = (v) => String(v).padStart(2, '0');
@@ -133,6 +148,28 @@ const handleManualDate = (text) => {
     return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
   };
 
+  const formatFullDateTime = (ts) => {
+    const d = Number.isFinite(Number(ts)) ? new Date(Number(ts)) : new Date();
+    return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  };
+
+  const getDayKey = (ts) => {
+    const d = Number.isFinite(Number(ts)) ? new Date(Number(ts)) : new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  };
+
+  const formatHistoryAxisLabel = (ts, prevTs, hasMultipleDays) => {
+    const d = Number.isFinite(Number(ts)) ? new Date(Number(ts)) : new Date();
+    const timePart = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    if (!hasMultipleDays) return timePart;
+    if (!Number.isFinite(Number(prevTs)) || getDayKey(prevTs) !== getDayKey(ts)) {
+      return `${pad2(d.getDate())} ${MONTH_SHORT[d.getMonth()]}\n${timePart}`;
+    }
+    return timePart;
+  };
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
   const normalizeMetric = (value) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
@@ -141,6 +178,26 @@ const handleManualDate = (text) => {
   const getTsEpochMs = (item) => {
     const ts = Number(item?.tsEpochMs ?? item?.ts_epoch_ms);
     return Number.isFinite(ts) ? Math.round(ts) : undefined;
+  };
+
+  const readingIdentity = (item) => {
+    const deviceId = item?.deviceId != null ? String(item.deviceId) : "";
+    const ts = getTsEpochMs(item);
+    const msgType = item?.msgType != null ? String(item.msgType) : "";
+    const parameterCount = Array.isArray(item?.parameters) ? item.parameters.length : 0;
+    return `${deviceId}|${ts ?? ""}|${msgType}|${parameterCount}`;
+  };
+
+  const dedupeReadings = (rows = []) => {
+    const out = [];
+    const seen = new Set();
+    (rows || []).forEach((row) => {
+      const key = readingIdentity(row);
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(row);
+    });
+    return out;
   };
 
   const pickNumberAlias = (obj, aliases = []) => {
@@ -203,6 +260,7 @@ const handleManualDate = (text) => {
   const [liveNotice, setLiveNotice] = useState("");
   const [offlineDevices, setOfflineDevices] = useState([]);
   const [historyNotice, setHistoryNotice] = useState("");
+  const [chartTooltips, setChartTooltips] = useState({});
   const offlineStreakRef = useRef({});
   const lastLiveTsRef = useRef({});
   const offlineSummary = useMemo(() => {
@@ -294,17 +352,19 @@ const handleManualDate = (text) => {
               // Initialize if new device
               if (!nextHistory[deviceId]) {
                 nextHistory[deviceId] = isPress
-                  ? { type: "press", labels: [], press: {} }
-                  : { type: "env", labels: [], temp: [], hum: [] };
+                  ? { type: "press", labels: [], timestamps: [], press: {} }
+                  : { type: "env", labels: [], timestamps: [], temp: [], hum: [] };
               }
 
               const devData = nextHistory[deviceId];
               const newLabels = [...(devData.labels || []).slice(-(MAX_GRAPH_POINTS - 1)), timeLabel];
+              const newTimestamps = [...(devData.timestamps || []).slice(-(MAX_GRAPH_POINTS - 1)), tsEpochMs];
 
               if (isPress) {
                 // Ensure type is press
                 devData.type = "press";
                 devData.labels = newLabels;
+                devData.timestamps = newTimestamps;
                 devData.press = devData.press || {};
                 pressList.forEach((p) => {
                   const arr = devData.press[p.id] ? [...devData.press[p.id].slice(-(MAX_GRAPH_POINTS - 1))] : [];
@@ -321,6 +381,7 @@ const handleManualDate = (text) => {
                 nextHistory[deviceId] = {
                   type: "env",
                   labels: newLabels,
+                  timestamps: newTimestamps,
                   temp: newTemp,
                   hum: newHum
                 };
@@ -346,36 +407,122 @@ const handleManualDate = (text) => {
 
   // --- Historical Data Handling ---
 
+  const buildHistoryFromReadings = (sourceReadings, startTs, endTs, normalizedTargetId = "") => {
+    const nextHistory = {};
+
+    // Sort readings by time ascending first (if not already)
+    const sortedReadings = (sourceReadings || [])
+      .map((item) => ({ ...item, graphTsEpochMs: getTsEpochMs(item) }))
+      .filter((item) => item.graphTsEpochMs !== undefined)
+      .sort((a, b) => a.graphTsEpochMs - b.graphTsEpochMs);
+
+    let processedCount = 0;
+    let matchCount = 0;
+
+    sortedReadings.forEach(item => {
+      processedCount++;
+      const reading = item;
+      const ts = Number(reading.graphTsEpochMs);
+      const envVals = getEnvValues(reading);
+
+      // Debug first few items
+      if (processedCount <= 3) {
+        console.log("GraphScreen: Processing Item:", JSON.stringify(item));
+        console.log("GraphScreen: Unwrapped Item:", JSON.stringify(reading));
+        console.log(`GraphScreen: Item TS: ${ts}`);
+      }
+
+      // Filter by date range
+      if (ts < startTs || ts > endTs) return;
+      const readingDeviceId = String(reading.deviceId || "Unknown");
+      if (normalizedTargetId && normalizeId(readingDeviceId) !== normalizedTargetId) return;
+
+      matchCount++;
+      const deviceId = readingDeviceId;
+      const pressList = extractPressMetrics(reading);
+      const hasEnv =
+        Number.isFinite(Number(envVals.temperature)) ||
+        Number.isFinite(Number(envVals.humidity));
+      const hasPress =
+        pressList.length > 0 &&
+        pressList.some((p) => Number.isFinite(Number(p.amps)));
+      const isPress = hasPress && !hasEnv;
+
+      // Initialize if new
+      if (!nextHistory[deviceId]) {
+        nextHistory[deviceId] = isPress
+          ? { type: "press", labels: [], timestamps: [], press: {} }
+          : { type: "env", labels: [], timestamps: [], temp: [], hum: [] };
+      }
+
+      // Format label
+      const timeLabel = formatTimeLabel(ts);
+
+      const devData = nextHistory[deviceId];
+      devData.labels = [...(devData.labels || []), timeLabel].slice(-MAX_GRAPH_POINTS);
+      devData.timestamps = [...(devData.timestamps || []), ts].slice(-MAX_GRAPH_POINTS);
+
+      if (isPress) {
+        devData.type = "press";
+        devData.press = devData.press || {};
+        pressList.forEach((p) => {
+          devData.press[p.id] = devData.press[p.id] || [];
+          devData.press[p.id] = [...devData.press[p.id], normalizeMetric(p.amps)].slice(-MAX_GRAPH_POINTS);
+        });
+      } else {
+        if (!hasEnv) return;
+        devData.type = "env";
+        devData.temp = [...(devData.temp || []), normalizeMetric(envVals.temperature)].slice(-MAX_GRAPH_POINTS);
+        devData.hum = [...(devData.hum || []), normalizeMetric(envVals.humidity)].slice(-MAX_GRAPH_POINTS);
+      }
+    });
+
+    return { nextHistory, processedCount, matchCount };
+  };
+
   const handleSearch = async () => {
-    if (!selectedDate) {
-      alert("Please select a date.");
+    if (!startDate || !endDate) {
+      alert("Please select both Start and End dates.");
       return;
     }
 
-    if (!validateDate(selectedDate)) {
-      alert("Please enter a valid date in DD-MM-YYYY format.");
+    if (!validateDate(startDate) || !validateDate(endDate)) {
+      alert("Please enter valid dates in DD-MM-YYYY format.");
       return;
     }
+
+    const startTs = parseDateToTs(startDate, false);
+    const endTs = parseDateToTs(endDate, true);
+    if (startTs > endTs) {
+      alert("Invalid date range. Start Date must be before End Date.");
+      return;
+    }
+
+    const targetDeviceId = String(historyDeviceId || "").trim();
+    const normalizedTargetId = normalizeId(targetDeviceId);
 
     setIsLoading(true);
     setViewMode('history');
     setDeviceHistory({}); // Clear current live data
+    setChartTooltips({});
     setHistoryNotice("");
     console.log("GraphScreen: Starting History Search...");
 
     try {
       // 1. Parse range
-      console.log(`GraphScreen: Date String: ${selectedDate}`);
-      const startTs = parseDateToTs(selectedDate, false);
-      const endTs = parseDateToTs(selectedDate, true);
+      console.log(`GraphScreen: Date Range: ${startDate} -> ${endDate}`);
+      console.log(`GraphScreen: Device Filter: ${targetDeviceId || "ALL"}`);
       console.log(`GraphScreen: Date Range TS: ${startTs} - ${endTs}`);
 
       // 2. Fetch paged IoT readings for selected range
       const { IoTReadings, _meta: fetchMeta } = await fetchAllIoTReadings({
+        deviceId: targetDeviceId || undefined,
         startTsEpochMs: startTs,
         endTsEpochMs: endTs,
       });
-      const sourceReadings = (IoTReadings || []).filter((item) => item?._schemaValid);
+      let sourceReadings = dedupeReadings(
+        (IoTReadings || []).filter((item) => item?._schemaValid)
+      );
       console.log("GraphScreen: Fetched IoTReadings count:", sourceReadings.length);
       if (fetchMeta?.potentiallyIncomplete) {
         console.warn(
@@ -384,71 +531,71 @@ const handleManualDate = (text) => {
       }
 
       // 3. Filter and group
-      const nextHistory = {};
+      let { nextHistory, processedCount, matchCount } = buildHistoryFromReadings(
+        sourceReadings,
+        startTs,
+        endTs,
+        normalizedTargetId
+      );
 
-      // Sort readings by time ascending first (if not already)
-      const sortedReadings = (sourceReadings || [])
-        .map((item) => ({ ...item, graphTsEpochMs: getTsEpochMs(item) }))
-        .filter((item) => item.graphTsEpochMs !== undefined)
-        .sort((a, b) => a.graphTsEpochMs - b.graphTsEpochMs);
-
-      let processedCount = 0;
-      let matchCount = 0;
-
-      sortedReadings.forEach(item => {
-        processedCount++;
-        const reading = item;
-        const ts = Number(reading.graphTsEpochMs);
-        const envVals = getEnvValues(reading);
-
-        // Debug first few items
-        if (processedCount <= 3) {
-          console.log("GraphScreen: Processing Item:", JSON.stringify(item));
-          console.log("GraphScreen: Unwrapped Item:", JSON.stringify(reading));
-          console.log(`GraphScreen: Item TS: ${ts}`);
-        }
-
-        // Filter by date range
-        if (ts < startTs || ts > endTs) return;
-
-        matchCount++;
-        const deviceId = String(reading.deviceId || "Unknown");
-        const pressList = extractPressMetrics(reading);
-        const hasEnv =
-          Number.isFinite(Number(envVals.temperature)) ||
-          Number.isFinite(Number(envVals.humidity));
-        const hasPress =
-          pressList.length > 0 &&
-          pressList.some((p) => Number.isFinite(Number(p.amps)));
-        const isPress = hasPress && !hasEnv;
-
-        // Initialize if new
-        if (!nextHistory[deviceId]) {
-          nextHistory[deviceId] = isPress
-            ? { type: "press", labels: [], press: {} }
-            : { type: "env", labels: [], temp: [], hum: [] };
-        }
-
-        // Format label
-        const timeLabel = formatTimeLabel(ts);
-
-        const devData = nextHistory[deviceId];
-        devData.labels = [...(devData.labels || []), timeLabel].slice(-MAX_GRAPH_POINTS);
-
-        if (isPress) {
-          devData.type = "press";
-          devData.press = devData.press || {};
-          pressList.forEach((p) => {
-            devData.press[p.id] = devData.press[p.id] || [];
-            devData.press[p.id] = [...devData.press[p.id], normalizeMetric(p.amps)].slice(-MAX_GRAPH_POINTS);
+      // Backend often behaves better with device-scoped history queries.
+      // If all-device query finds no matches, retry by fetching each visible device separately.
+      if (!targetDeviceId && matchCount === 0) {
+        const fallbackDeviceIds = new Set();
+        sourceReadings.forEach((row) => {
+          const id = String(row?.deviceId || "").trim();
+          if (id) fallbackDeviceIds.add(id);
+        });
+        try {
+          const liveRows = await fetchRealTimeDataMonitor();
+          (liveRows || []).forEach((row) => {
+            const id = String(row?.deviceId || "").trim();
+            if (id) fallbackDeviceIds.add(id);
           });
-        } else {
-          if (!hasEnv) return;
-          devData.type = "env";
-          devData.temp = [...(devData.temp || []), normalizeMetric(envVals.temperature)].slice(-MAX_GRAPH_POINTS);
-          devData.hum = [...(devData.hum || []), normalizeMetric(envVals.humidity)].slice(-MAX_GRAPH_POINTS);
+        } catch (liveErr) {
+          console.warn("[GraphScreen] Could not fetch live device list for fallback:", liveErr?.message || liveErr);
         }
-      });
+
+        if (fallbackDeviceIds.size > 0) {
+          const ids = Array.from(fallbackDeviceIds);
+          console.log(`[GraphScreen] Retrying history with device-scoped queries for ${ids.length} devices...`);
+          const fallbackRows = [];
+
+          for (const deviceId of ids) {
+            try {
+              const perDevice = await fetchAllIoTReadings({
+                deviceId,
+                startTsEpochMs: startTs,
+                endTsEpochMs: endTs,
+                maxPages: 120,
+              });
+              if (perDevice?._meta?.potentiallyIncomplete) {
+                console.warn(
+                  `[GraphScreen] Device ${deviceId} history may be partial. stopReason=${perDevice._meta.stopReason} pages=${perDevice._meta.pagesFetched}`
+                );
+              }
+              fallbackRows.push(...(perDevice?.IoTReadings || []));
+            } catch (perDeviceErr) {
+              console.warn(`[GraphScreen] Device-scoped history failed for ${deviceId}:`, perDeviceErr?.message || perDeviceErr);
+            }
+          }
+
+          sourceReadings = dedupeReadings([
+            ...sourceReadings,
+            ...(fallbackRows || []).filter((item) => item?._schemaValid),
+          ]);
+          const rebuilt = buildHistoryFromReadings(
+            sourceReadings,
+            startTs,
+            endTs,
+            normalizedTargetId
+          );
+          nextHistory = rebuilt.nextHistory;
+          processedCount = rebuilt.processedCount;
+          matchCount = rebuilt.matchCount;
+          console.log(`[GraphScreen] Device-scoped retry matches: ${matchCount}`);
+        }
+      }
 
       console.log(`GraphScreen: Processed ${processedCount} items. Matches found: ${matchCount}`);
 
@@ -457,7 +604,11 @@ const handleManualDate = (text) => {
       setDeviceHistory(nextHistory);
 
       if (matchCount === 0) {
-        setHistoryNotice("No data found for this date.");
+        if (targetDeviceId) {
+          setHistoryNotice(`No data found for ${targetDeviceId} in selected range.`);
+        } else {
+          setHistoryNotice("No data found for selected range.");
+        }
       }
 
     } catch (e) {
@@ -471,6 +622,7 @@ const handleManualDate = (text) => {
   const handleResetToLive = () => {
     setViewMode('live');
     setDeviceHistory({}); // Clear history to restart standard polling accumulation
+    setChartTooltips({});
     setLiveNotice("");
     setOfflineDevices([]);
     setHistoryNotice("");
@@ -489,6 +641,7 @@ const handleManualDate = (text) => {
     const unsubscribe = navigation?.addListener?.('focus', () => {
       setViewMode('live');
       setDeviceHistory({});
+      setChartTooltips({});
       setLiveNotice("");
       setOfflineDevices([]);
       setHistoryNotice("");
@@ -543,23 +696,66 @@ const handleManualDate = (text) => {
             style={[styles.label, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
             maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
           >
-            Date
+            Start Date
           </Text>
           <View style={styles.dateInputContainer}>
             <TextInput
               style={[styles.dateInput, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
-              value={selectedDate}
-              onChangeText={handleManualDate}
+              value={startDate}
+              onChangeText={(text) => handleManualDate("start", text)}
               keyboardType="numeric"
               maxLength={10}
               maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
             />
-            <TouchableOpacity onPress={showDatePicker}>
+            <TouchableOpacity onPress={() => showDatePickerFor("start")}>
               <Image
                 source={require('../../assets/images/Calender.png')}
                 style={styles.calendarIcon}
               />
             </TouchableOpacity>
+          </View>
+
+          <Text
+            style={[styles.label, styles.dateSecondaryLabel, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+            maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+          >
+            End Date
+          </Text>
+          <View style={styles.dateInputContainer}>
+            <TextInput
+              style={[styles.dateInput, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+              value={endDate}
+              onChangeText={(text) => handleManualDate("end", text)}
+              keyboardType="numeric"
+              maxLength={10}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            />
+            <TouchableOpacity onPress={() => showDatePickerFor("end")}>
+              <Image
+                source={require('../../assets/images/Calender.png')}
+                style={styles.calendarIcon}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <Text
+            style={[styles.label, styles.dateSecondaryLabel, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+            maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+          >
+            Device ID (Optional)
+          </Text>
+          <View style={styles.dateInputContainer}>
+            <TextInput
+              style={[styles.dateInput, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+              value={historyDeviceId}
+              onChangeText={setHistoryDeviceId}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="All devices"
+              placeholderTextColor="#888"
+              maxLength={48}
+              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            />
           </View>
         </View>
 
@@ -652,7 +848,7 @@ const handleManualDate = (text) => {
         {!isLoading && Object.keys(deviceHistory).length === 0 && !liveNotice && (
           <Text style={styles.waitingText}>
             {viewMode === 'history'
-              ? "No data for the selected date."
+              ? "No data for selected range."
               : "Waiting for live data..."}
           </Text>
         )}
@@ -660,12 +856,22 @@ const handleManualDate = (text) => {
         {Object.keys(deviceHistory).map((deviceId) => {
           const history = deviceHistory[deviceId];
           // Ensure we have at least one valid data point to avoid crash
-          if (!history.labels.length) return null;
+          if (!(history?.labels?.length || history?.timestamps?.length)) return null;
 
-          const labels = history.labels.length ? history.labels : ["0"];
+          const timestamps = Array.isArray(history.timestamps) ? history.timestamps : [];
+          const dayCount = new Set((timestamps || []).map(getDayKey)).size;
+          const hasMultipleDays = viewMode === 'history' && dayCount > 1;
+          const labels = timestamps.length
+            ? timestamps.map((ts, idx) =>
+                viewMode === 'history'
+                  ? formatHistoryAxisLabel(ts, idx > 0 ? timestamps[idx - 1] : undefined, hasMultipleDays)
+                  : formatTimeLabel(ts)
+              )
+            : (history.labels.length ? history.labels : ["0"]);
           const viewportWidth = Math.max(screenWidth - 24, 260);
           const chartWidth = Math.max(viewportWidth, labels.length * MIN_POINT_WIDTH);
           const canScroll = chartWidth > viewportWidth;
+          const tooltip = chartTooltips[deviceId];
 
           let datasets = [];
           let legend = [];
@@ -724,38 +930,88 @@ const handleManualDate = (text) => {
                 }}
                 scrollEventThrottle={16}
               >
-                <LineChart
-                  data={{
-                    labels: labels,
-                    datasets,
-                    legend
-                  }}
-                  width={chartWidth}
-                  height={220}
-                  yAxisSuffix=""
-                  yAxisInterval={1}
-                  fromZero
-                  segments={5}
-                  chartConfig={{
-                    backgroundColor: "#fff",
-                    backgroundGradientFrom: "#fff",
-                    backgroundGradientTo: "#fff",
-                    decimalPlaces: 1, // 1 decimal for precision
-                    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    style: {
-                      borderRadius: 16
-                    },
-                    propsForDots: {
-                      r: "5",
-                      strokeWidth: "2",
-                      stroke: "#ffa726"
-                    }
-                  }}
-                  // dot values intentionally hidden for clarity
-                  bezier
-                  style={styles.chartStyle}
-                />
+                <View style={[styles.chartCanvas, { width: chartWidth }]}>
+                  <LineChart
+                    data={{
+                      labels: labels,
+                      datasets,
+                      legend
+                    }}
+                    width={chartWidth}
+                    height={220}
+                    yAxisSuffix=""
+                    yAxisInterval={1}
+                    fromZero
+                    segments={5}
+                    chartConfig={{
+                      backgroundColor: "#fff",
+                      backgroundGradientFrom: "#fff",
+                      backgroundGradientTo: "#fff",
+                      decimalPlaces: 1, // 1 decimal for precision
+                      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                      style: {
+                        borderRadius: 16
+                      },
+                      propsForDots: {
+                        r: "5",
+                        strokeWidth: "2",
+                        stroke: "#ffa726"
+                      }
+                    }}
+                    onDataPointClick={(point) => {
+                      const idx = Number(point?.index);
+                      if (!Number.isFinite(idx)) return;
+                      const value = Number(point?.value);
+                      const valueText = Number.isFinite(value) ? value.toFixed(2) : String(point?.value ?? "--");
+                      const ts = Number(timestamps[idx]);
+                      const tsText = Number.isFinite(ts) ? formatFullDateTime(ts) : "--";
+                      let seriesIdx = datasets.findIndex((ds) => ds === point?.dataset);
+                      if (seriesIdx < 0) {
+                        const hintedIdx = Number(point?.datasetIndex);
+                        if (Number.isFinite(hintedIdx)) seriesIdx = hintedIdx;
+                      }
+                      const seriesName = legend[seriesIdx] || legend[0] || "Value";
+
+                      setChartTooltips((prev) => {
+                        const prevTip = prev[deviceId];
+                        if (prevTip && prevTip.idx === idx && prevTip.seriesName === seriesName) {
+                          const { [deviceId]: _hidden, ...rest } = prev;
+                          return rest;
+                        }
+                        return {
+                          ...prev,
+                          [deviceId]: {
+                            idx,
+                            x: Number(point?.x) || 0,
+                            y: Number(point?.y) || 0,
+                            seriesName,
+                            valueText,
+                            tsText,
+                          },
+                        };
+                      });
+                    }}
+                    // dot values intentionally hidden for clarity
+                    bezier
+                    style={styles.chartStyle}
+                  />
+                  {!!tooltip && (
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.chartTooltip,
+                        {
+                          left: clamp((tooltip.x || 0) - TOOLTIP_WIDTH / 2, 4, Math.max(4, chartWidth - TOOLTIP_WIDTH - 4)),
+                          top: Math.max(6, (tooltip.y || 0) - 70),
+                        },
+                      ]}
+                    >
+                      <Text style={styles.chartTooltipTitle}>{tooltip.seriesName}: {tooltip.valueText}</Text>
+                      <Text style={styles.chartTooltipTime}>{tooltip.tsText}</Text>
+                    </View>
+                  )}
+                </View>
               </ScrollView>
               <View style={styles.scrollControls}>
                 <Pressable
@@ -959,6 +1215,9 @@ const styles = StyleSheet.create({
   dateFilterSingle: {
     marginVertical: 12,
     paddingHorizontal: 14,
+  },
+  dateSecondaryLabel: {
+    marginTop: 10,
   },
   dateInputContainer: {
     flexDirection: 'row',
@@ -1260,6 +1519,27 @@ const styles = StyleSheet.create({
   chartStyle: {
     marginVertical: 8,
     borderRadius: 16,
+  },
+  chartCanvas: {
+    position: 'relative',
+  },
+  chartTooltip: {
+    position: 'absolute',
+    width: TOOLTIP_WIDTH,
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  chartTooltipTitle: {
+    color: '#f8fafc',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chartTooltipTime: {
+    color: '#cbd5e1',
+    fontSize: 10,
+    marginTop: 2,
   },
   chartScroll: { paddingRight: 12 },
   scrollControls: {

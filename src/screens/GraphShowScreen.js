@@ -35,10 +35,13 @@ const LIVE_POLL_MS = 5000;
 const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll
 const MAX_GRAPH_POINTS = 100;
 const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
+const TOOLTIP_WIDTH = 170;
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const EMPTY_GRAPH_DATA = {
   type: "env",
   labels: ["0"],
+  timestamps: [],
   temp: [0],
   hum: [0],
   press: {},
@@ -80,6 +83,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
   const offlineStreakRef = useRef(0);
   const chartScrollRef = useRef(null);
   const [chartScrollX, setChartScrollX] = useState(0);
+  const [selectedPoint, setSelectedPoint] = useState(null);
 
   // --- State for Date Filter ---
   const getToday = () => {
@@ -177,10 +181,39 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     return `${h}:${m}:${s}`;
   };
 
+  const formatFullDateTime = (ts) => {
+    const d = new Date(Number(ts));
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}-${month}-${year} ${formatTimeLabel(ts, true)}`;
+  };
+
+  const getDayKey = (ts) => {
+    const d = new Date(Number(ts));
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatHistoryAxisLabel = (ts, prevTs, hasMultipleDays) => {
+    const d = new Date(Number(ts));
+    const timePart = formatTimeLabel(ts, false);
+    if (!hasMultipleDays) return timePart;
+    if (!Number.isFinite(Number(prevTs)) || getDayKey(prevTs) !== getDayKey(ts)) {
+      return `${String(d.getDate()).padStart(2, "0")} ${MONTH_SHORT[d.getMonth()]}\n${timePart}`;
+    }
+    return timePart;
+  };
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
   const appendPoint = (arr, value) => [...(arr || []).slice(-(MAX_GRAPH_POINTS - 1)), value];
 
   const fetchHistory = async () => {
     setIsLoading(true);
+    setSelectedPoint(null);
     console.log(`GraphShowScreen: Fetching history for ${deviceId} from ${startDate} to ${endDate}`);
 
     const targetId = normalizeId(deviceId);
@@ -230,14 +263,16 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
       if (sliced.length > 0) {
         const labels = [];
+        const timestamps = [];
         const temp = [];
         const hum = [];
         const pressMap = {};
         let isPress = false;
 
         sliced.forEach(item => {
-          const d = new Date(Number(item.graphTsEpochMs));
-          labels.push(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+          const ts = Number(item.graphTsEpochMs);
+          labels.push(formatTimeLabel(ts));
+          timestamps.push(ts);
           const pressList = extractPressMetrics(item);
           const envVals = getEnvValues(item);
           const hasEnv =
@@ -264,6 +299,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
           setGraphData({
             type: "press",
             labels,
+            timestamps,
             press: pressMap,
             temp: [],
             hum: []
@@ -272,6 +308,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
           setGraphData({
             type: "env",
             labels,
+            timestamps,
             temp,
             hum,
             press: {}
@@ -304,7 +341,8 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     const targetId = normalizeId(deviceId);
     lastLiveTsRef.current = null;
     offlineStreakRef.current = 0;
-    setGraphData({ type: "env", labels: [], temp: [], hum: [], press: {} });
+    setGraphData({ type: "env", labels: [], timestamps: [], temp: [], hum: [], press: {} });
+    setSelectedPoint(null);
     setLiveNotice("");
 
     const pollLive = async () => {
@@ -369,6 +407,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
             return {
               type: "press",
               labels: appendPoint(prev?.labels, label),
+              timestamps: appendPoint(prev?.timestamps, tsEpochMs),
               press: nextPress,
               temp: [],
               hum: [],
@@ -377,10 +416,11 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
           const temp = Number(envVals.temperature) || 0;
           const hum = Number(envVals.humidity) || 0;
-          const prevEnv = prev?.type === "env" ? prev : { labels: [], temp: [], hum: [] };
+          const prevEnv = prev?.type === "env" ? prev : { labels: [], timestamps: [], temp: [], hum: [] };
           return {
             type: "env",
             labels: appendPoint(prevEnv.labels, label),
+            timestamps: appendPoint(prevEnv.timestamps, tsEpochMs),
             temp: appendPoint(prevEnv.temp, temp),
             hum: appendPoint(prevEnv.hum, hum),
             press: {},
@@ -428,7 +468,40 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     }
   };
 
-  const chartLabels = graphData.labels && graphData.labels.length ? graphData.labels : ["--"];
+  const chartTimestamps = Array.isArray(graphData.timestamps) ? graphData.timestamps : [];
+  const historyDayCount = new Set(chartTimestamps.map(getDayKey)).size;
+  const historyHasMultipleDays = viewMode === "history" && historyDayCount > 1;
+  const chartLabels = chartTimestamps.length
+    ? chartTimestamps.map((ts, idx) =>
+        viewMode === "history"
+          ? formatHistoryAxisLabel(ts, idx > 0 ? chartTimestamps[idx - 1] : undefined, historyHasMultipleDays)
+          : formatTimeLabel(ts, true)
+      )
+    : (graphData.labels && graphData.labels.length ? graphData.labels : ["--"]);
+  const pressIds = Object.keys(graphData.press || {}).sort((a, b) => Number(a) - Number(b));
+  const chartLegend =
+    graphData.type === "press"
+      ? pressIds.map((pid) => `Phase-${pid} Amps`)
+      : ["Temp", "Humidity"];
+  const chartDatasets =
+    graphData.type === "press"
+      ? pressIds.map((pid, idx) => ({
+          data: graphData.press[pid] && graphData.press[pid].length ? graphData.press[pid] : [0],
+          color: (opacity = 1) => getPressColor(pid, idx, opacity),
+          strokeWidth: 2,
+        }))
+      : [
+          {
+            data: graphData.temp && graphData.temp.length ? graphData.temp : [0],
+            color: (opacity = 1) => `rgba(255,165,0,${opacity})`, // Orange
+            strokeWidth: 2,
+          },
+          {
+            data: graphData.hum && graphData.hum.length ? graphData.hum : [0],
+            color: (opacity = 1) => `rgba(0,0,255,${opacity})`, // Blue
+            strokeWidth: 2,
+          },
+        ];
   const viewportWidth = Math.max(screenWidth - 20, 260);
   const chartWidth = Math.max(viewportWidth, chartLabels.length * MIN_POINT_WIDTH);
   const canScroll = chartWidth > viewportWidth;
@@ -455,13 +528,19 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
         <View style={styles.modeSwitchRow}>
           <TouchableOpacity
             style={[styles.modeBtn, viewMode === "live" && styles.modeBtnActive]}
-            onPress={() => setViewMode("live")}
+            onPress={() => {
+              setSelectedPoint(null);
+              setViewMode("live");
+            }}
           >
             <Text style={[styles.modeBtnText, viewMode === "live" && styles.modeBtnTextActive]}>Live</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeBtn, viewMode === "history" && styles.modeBtnActive]}
-            onPress={() => setViewMode("history")}
+            onPress={() => {
+              setSelectedPoint(null);
+              setViewMode("history");
+            }}
           >
             <Text style={[styles.modeBtnText, viewMode === "history" && styles.modeBtnTextActive]}>History</Text>
           </TouchableOpacity>
@@ -560,54 +639,76 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
                 onScroll={(e) => setChartScrollX(e?.nativeEvent?.contentOffset?.x || 0)}
                 scrollEventThrottle={16}
               >
-                <LineChart
-                  data={{
-                    labels: chartLabels,
-                    datasets:
-                      graphData.type === "press"
-                        ? Object.keys(graphData.press || {})
-                            .sort((a, b) => Number(a) - Number(b))
-                            .map((pid, idx) => ({
-                              data: graphData.press[pid] && graphData.press[pid].length ? graphData.press[pid] : [0],
-                              color: (opacity = 1) => getPressColor(pid, idx, opacity),
-                              strokeWidth: 2,
-                            }))
-                        : [
-                            {
-                              data: graphData.temp && graphData.temp.length ? graphData.temp : [0],
-                              color: (opacity = 1) => `rgba(255,165,0,${opacity})`, // Orange
-                              strokeWidth: 2,
-                            },
-                            {
-                              data: graphData.hum && graphData.hum.length ? graphData.hum : [0],
-                              color: (opacity = 1) => `rgba(0,0,255,${opacity})`, // Blue
-                              strokeWidth: 2,
-                            },
-                          ],
-                  }}
-                  width={chartWidth}
-                  height={220}
-                  yAxisSuffix=""
-                  fromZero
-                  chartConfig={{
-                    backgroundColor: "#fff",
-                    backgroundGradientFrom: "#fff",
-                    backgroundGradientTo: "#fff",
-                    decimalPlaces: 1,
-                    color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                    propsForDots: {
-                      r: "4",
-                      strokeWidth: "2",
-                      stroke: "#ffa726",
-                    },
-                  }}
-                  bezier
-                  style={{
-                    marginVertical: 8,
-                    borderRadius: 16
-                  }}
-                />
+                <View style={[styles.chartCanvas, { width: chartWidth }]}>
+                  <LineChart
+                    data={{
+                      labels: chartLabels,
+                      datasets: chartDatasets,
+                    }}
+                    width={chartWidth}
+                    height={220}
+                    yAxisSuffix=""
+                    fromZero
+                    chartConfig={{
+                      backgroundColor: "#fff",
+                      backgroundGradientFrom: "#fff",
+                      backgroundGradientTo: "#fff",
+                      decimalPlaces: 1,
+                      color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                      propsForDots: {
+                        r: "4",
+                        strokeWidth: "2",
+                        stroke: "#ffa726",
+                      },
+                    }}
+                    onDataPointClick={(point) => {
+                      const idx = Number(point?.index);
+                      if (!Number.isFinite(idx)) return;
+                      const value = Number(point?.value);
+                      const valueText = Number.isFinite(value) ? value.toFixed(2) : String(point?.value ?? "--");
+                      const ts = Number(chartTimestamps[idx]);
+                      const tsText = Number.isFinite(ts) ? formatFullDateTime(ts) : "--";
+                      let seriesIdx = chartDatasets.findIndex((ds) => ds === point?.dataset);
+                      if (seriesIdx < 0) {
+                        const hintedIdx = Number(point?.datasetIndex);
+                        if (Number.isFinite(hintedIdx)) seriesIdx = hintedIdx;
+                      }
+                      const seriesName = chartLegend[seriesIdx] || chartLegend[0] || "Value";
+                      setSelectedPoint((prev) => {
+                        if (prev && prev.idx === idx && prev.seriesName === seriesName) return null;
+                        return {
+                          idx,
+                          x: Number(point?.x) || 0,
+                          y: Number(point?.y) || 0,
+                          seriesName,
+                          valueText,
+                          tsText,
+                        };
+                      });
+                    }}
+                    bezier
+                    style={{
+                      marginVertical: 8,
+                      borderRadius: 16
+                    }}
+                  />
+                  {!!selectedPoint && (
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.chartTooltip,
+                        {
+                          left: clamp((selectedPoint.x || 0) - TOOLTIP_WIDTH / 2, 4, Math.max(4, chartWidth - TOOLTIP_WIDTH - 4)),
+                          top: Math.max(6, (selectedPoint.y || 0) - 70),
+                        },
+                      ]}
+                    >
+                      <Text style={styles.chartTooltipTitle}>{selectedPoint.seriesName}: {selectedPoint.valueText}</Text>
+                      <Text style={styles.chartTooltipTime}>{selectedPoint.tsText}</Text>
+                    </View>
+                  )}
+                </View>
               </ScrollView>
               <View style={styles.scrollControls}>
                 <TouchableOpacity
@@ -841,6 +942,27 @@ const styles = StyleSheet.create({
   },
   chartScroll: {
     paddingRight: 12,
+  },
+  chartCanvas: {
+    position: "relative",
+  },
+  chartTooltip: {
+    position: "absolute",
+    width: TOOLTIP_WIDTH,
+    backgroundColor: "rgba(15, 23, 42, 0.92)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  chartTooltipTitle: {
+    color: "#f8fafc",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  chartTooltipTime: {
+    color: "#cbd5e1",
+    fontSize: 10,
+    marginTop: 2,
   },
   scrollControls: {
     flexDirection: "row",
