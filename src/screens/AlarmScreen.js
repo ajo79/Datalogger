@@ -54,10 +54,12 @@ export default function AlarmScreen() {
   const toEpochMs = (value) => {
     const n = Number(value);
     if (Number.isFinite(n)) {
-      if (n > 1e9 && n < 1e12) return Math.round(n * 1000);
+      if (n > 1e16) return Math.round(n / 1e6); // ns -> ms
+      if (n > 1e13) return Math.round(n / 1e3); // us -> ms
+      if (n > 1e9 && n < 1e12) return Math.round(n * 1000); // s -> ms
       return Math.round(n);
     }
-    return Date.now();
+    return undefined;
   };
 
   const hasAnyParameterAlarm = (item) =>
@@ -184,8 +186,8 @@ export default function AlarmScreen() {
     // Prefer payload fields first, then root fields
     const status = (() => {
       const flag = Number(item?.payload?.alarmFlag ?? item.alarmFlag);
-      if (Number.isFinite(flag)) return flag === 1 ? "Alarm" : "Ok";
-      return hasAlarm(item) ? "Alarm" : (item.status || "Ok");
+      if (Number.isFinite(flag)) return flag === 1 ? "Active" : "Cleared";
+      return hasAlarm(item) ? "Active" : "Cleared";
     })();
     const deviceName =
       item?.payload?.deviceName ||
@@ -199,11 +201,7 @@ export default function AlarmScreen() {
     const ackBy = item.ackBy || item.ack_by || "--";
     const ackDateTime = item.ackDateTime || item.ack_date_time || "--";
     const message = pickMessage(item);
-    const dateTime =
-      formatTs(item.timestamp ?? item.ts) ||
-      item.dateTime ||
-      item.date_time ||
-      "--";
+    const dateTime = formatTs(item?.ts) || "--";
 
     return (
     <View style={styles.row}>

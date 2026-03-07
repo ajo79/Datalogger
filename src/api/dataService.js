@@ -264,8 +264,14 @@ function toEpochMs(value) {
 
   const numeric = Number(value);
   if (Number.isFinite(numeric)) {
-    // Seconds epoch -> ms
-    if (numeric > 1e9 && numeric < 1e12) return Math.round(numeric * 1000);
+    // Normalize common timestamp units to epoch milliseconds.
+    // - seconds:   1e9..1e12
+    // - millis:    ~1e12
+    // - micros:    >1e13
+    // - nanos:     >1e16
+    if (numeric > 1e16) return Math.round(numeric / 1e6); // ns -> ms
+    if (numeric > 1e13) return Math.round(numeric / 1e3); // us -> ms
+    if (numeric > 1e9 && numeric < 1e12) return Math.round(numeric * 1000); // s -> ms
     return Math.round(numeric);
   }
 
@@ -871,9 +877,24 @@ export function prefetchFastDeviceStatus(options = {}) {
 
 /**
  * Helper to get ESP32 alarm entries.
- * Each entry is already normalized (payload flattened, numbers coerced, ts derived from timestamp field).
+ * Each entry is already normalized (payload flattened, numbers coerced).
+ * Alarm time uses tsEpochMs only.
  */
 export async function fetchESP32Alarms(options = {}) {
   const { ESP32_Alarms } = await fetchDashboardData(options);
-  return ESP32_Alarms;
+  const normalized = (ESP32_Alarms || []).map((item) => ({
+    ...item,
+    ts: pickEpochMs(item?.tsEpochMs, item?.ts_epoch_ms),
+  }));
+
+  return [...normalized].sort((a, b) => {
+    const aTs = Number(a?.ts);
+    const bTs = Number(b?.ts);
+    const aHasTs = Number.isFinite(aTs);
+    const bHasTs = Number.isFinite(bTs);
+    if (aHasTs && bHasTs) return bTs - aTs;
+    if (aHasTs) return -1;
+    if (bHasTs) return 1;
+    return 0;
+  });
 }

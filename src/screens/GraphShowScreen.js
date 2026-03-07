@@ -34,6 +34,7 @@ const screenWidth = Dimensions.get("window").width;
 const LIVE_POLL_MS = 5000;
 const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll
 const MAX_GRAPH_POINTS = 100;
+const HISTORY_PAGE_SIZE = 500;
 const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
 const TOOLTIP_WIDTH = 170;
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -79,6 +80,10 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
   const [graphData, setGraphData] = useState(EMPTY_GRAPH_DATA);
   const [viewMode, setViewMode] = useState("live"); // "live" | "history"
   const [liveNotice, setLiveNotice] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyPageCount, setHistoryPageCount] = useState(0);
+  const [historyTotalPoints, setHistoryTotalPoints] = useState(0);
+  const [historyFullData, setHistoryFullData] = useState(null);
   const lastLiveTsRef = useRef(null);
   const offlineStreakRef = useRef(0);
   const chartScrollRef = useRef(null);
@@ -170,6 +175,62 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     return date.getTime();
   };
 
+  /**
+   * Validates manual date input format (DD-MM-YYYY).
+   * Also checks if it's a valid calendar date.
+   */
+  const validateDate = (dateStr) => {
+    const regex = /^(\d{2})-(\d{2})-(\d{4})$/;
+    if (!regex.test(dateStr)) return false;
+
+    const [day, month, year] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+
+    return (
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+    );
+  };
+
+  /**
+   * Handles text changes in the date input fields.
+   * Allows manual typing with simple regex filtering.
+   */
+  const handleManualDate = (field, text) => {
+    const cleaned = text.replace(/[^0-9-]/g, '');
+    if (field === "end") {
+      setEndDate(cleaned);
+    } else {
+      setStartDate(cleaned);
+    }
+  };
+
+  const applyHistoryPage = (fullData, page) => {
+    if (!fullData) return EMPTY_GRAPH_DATA;
+    const start = page * HISTORY_PAGE_SIZE;
+    const end = start + HISTORY_PAGE_SIZE;
+    if (fullData.type === "press") {
+      const nextPress = {};
+      Object.entries(fullData.press || {}).forEach(([pid, series]) => {
+        nextPress[pid] = (series || []).slice(start, end);
+      });
+      return {
+        ...fullData,
+        labels: (fullData.labels || []).slice(start, end),
+        timestamps: (fullData.timestamps || []).slice(start, end),
+        press: nextPress,
+      };
+    }
+    return {
+      ...fullData,
+      labels: (fullData.labels || []).slice(start, end),
+      timestamps: (fullData.timestamps || []).slice(start, end),
+      temp: (fullData.temp || []).slice(start, end),
+      hum: (fullData.hum || []).slice(start, end),
+    };
+  };
+
   const normalizeId = (id) => String(id || "").trim().toLowerCase();
 
   const formatTimeLabel = (ts, withSeconds = false) => {
@@ -212,6 +273,23 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
   const appendPoint = (arr, value) => [...(arr || []).slice(-(MAX_GRAPH_POINTS - 1)), value];
 
   const fetchHistory = async () => {
+    if (!startDate || !endDate) {
+      alert("Please select both Start and End dates.");
+      return;
+    }
+
+    if (!validateDate(startDate) || !validateDate(endDate)) {
+      alert("Please enter valid dates in DD-MM-YYYY format.");
+      return;
+    }
+
+    const startTs = parseDateToTs(startDate, false);
+    const endTs = parseDateToTs(endDate, true);
+    if (startTs > endTs) {
+      alert("Invalid date range. Start Date must be before End Date.");
+      return;
+    }
+
     setIsLoading(true);
     setSelectedPoint(null);
     console.log(`GraphShowScreen: Fetching history for ${deviceId} from ${startDate} to ${endDate}`);
@@ -219,6 +297,10 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     const targetId = normalizeId(deviceId);
 
     if (!targetId) {
+      setHistoryFullData(null);
+      setHistoryTotalPoints(0);
+      setHistoryPageCount(0);
+      setHistoryPage(0);
       setGraphData(EMPTY_GRAPH_DATA);
       setIsLoading(false);
       return;
@@ -257,9 +339,8 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
       console.log(`GraphShowScreen: Found ${filtered.length} points for ${deviceId}`);
 
-      // 4. Process limit (latest 100 points for rendering performance)
-      const DISPLAY_LIMIT = 100;
-      const sliced = filtered.slice(-DISPLAY_LIMIT);
+      // 4. Use all points in range (no display cap)
+      const sliced = filtered;
 
       if (sliced.length > 0) {
         const labels = [];
@@ -295,28 +376,38 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
           }
         });
 
-        if (isPress) {
-          setGraphData({
-            type: "press",
-            labels,
-            timestamps,
-            press: pressMap,
-            temp: [],
-            hum: []
-          });
-        } else {
-          setGraphData({
-            type: "env",
-            labels,
-            timestamps,
-            temp,
-            hum,
-            press: {}
-          });
-        }
+        const fullData = isPress
+          ? {
+              type: "press",
+              labels,
+              timestamps,
+              press: pressMap,
+              temp: [],
+              hum: []
+            }
+          : {
+              type: "env",
+              labels,
+              timestamps,
+              temp,
+              hum,
+              press: {}
+            };
+
+        const totalPoints = Array.isArray(timestamps) ? timestamps.length : 0;
+        const pageCount = totalPoints ? Math.ceil(totalPoints / HISTORY_PAGE_SIZE) : 0;
+        setHistoryFullData(fullData);
+        setHistoryTotalPoints(totalPoints);
+        setHistoryPageCount(pageCount);
+        setHistoryPage(0);
+        setGraphData(applyHistoryPage(fullData, 0));
       } else {
         // No data found
         console.log("GraphShowScreen: No data after filtering.");
+        setHistoryFullData(null);
+        setHistoryTotalPoints(0);
+        setHistoryPageCount(0);
+        setHistoryPage(0);
         setGraphData(EMPTY_GRAPH_DATA);
       }
 
@@ -326,12 +417,6 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
       setIsLoading(false);
     }
   };
-
-  // --- History fetch ---
-  useEffect(() => {
-    if (viewMode !== "history") return;
-    fetchHistory();
-  }, [viewMode, deviceId, startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Live polling (selected device only) ---
   useEffect(() => {
@@ -439,6 +524,12 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
     };
   }, [viewMode, deviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (viewMode !== "history") return;
+    if (!historyFullData) return;
+    setGraphData(applyHistoryPage(historyFullData, historyPage));
+  }, [viewMode, historyFullData, historyPage]);
+
   /**
    * Opens the date picker for 'start' or 'end' field.
    */
@@ -539,6 +630,9 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
             style={[styles.modeBtn, viewMode === "history" && styles.modeBtnActive]}
             onPress={() => {
               setSelectedPoint(null);
+              setGraphData(EMPTY_GRAPH_DATA);
+              setLiveNotice("");
+              setHistoryPage(0);
               setViewMode("history");
             }}
           >
@@ -557,7 +651,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
                   style={styles.input}
                   placeholder="DD-MM-YYYY"
                   value={startDate}
-                  onChangeText={setStartDate}
+                  onChangeText={(text) => handleManualDate("start", text)}
                 />
                 <TouchableOpacity onPress={() => showDatePicker("start")}>
                   <Image
@@ -576,7 +670,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
                   style={styles.input}
                   placeholder="DD-MM-YYYY"
                   value={endDate}
-                  onChangeText={setEndDate}
+                  onChangeText={(text) => handleManualDate("end", text)}
                 />
                 <TouchableOpacity onPress={() => showDatePicker("end")}>
                   <Image
@@ -590,6 +684,28 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
             {/* Filter Button */}
             <TouchableOpacity style={styles.filterBtn} onPress={fetchHistory}>
               <Text style={styles.filterText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {viewMode === "history" && historyPageCount > 1 && (
+          <View style={styles.pagerRow}>
+            <TouchableOpacity
+              style={[styles.pagerBtn, historyPage === 0 && styles.pagerBtnDisabled]}
+              onPress={() => setHistoryPage((p) => Math.max(0, p - 1))}
+              disabled={historyPage === 0}
+            >
+              <Text style={styles.pagerText}>Prev</Text>
+            </TouchableOpacity>
+            <Text style={styles.pagerLabel}>
+              Page {historyPage + 1} / {historyPageCount} ({historyTotalPoints === 0 ? 0 : historyPage * HISTORY_PAGE_SIZE + 1}-
+              {Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, historyTotalPoints)} of {historyTotalPoints})
+            </Text>
+            <TouchableOpacity
+              style={[styles.pagerBtn, historyPage + 1 >= historyPageCount && styles.pagerBtnDisabled]}
+              onPress={() => setHistoryPage((p) => Math.min(historyPageCount - 1, p + 1))}
+              disabled={historyPage + 1 >= historyPageCount}
+            >
+              <Text style={styles.pagerText}>Next</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -900,6 +1016,33 @@ const styles = StyleSheet.create({
     color: "black",
     fontWeight: "bold",
     fontSize: 14
+  },
+  pagerRow: {
+    marginTop: -4,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  pagerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#e3e3e3",
+  },
+  pagerBtnDisabled: {
+    opacity: 0.5,
+  },
+  pagerText: {
+    color: "#000",
+    fontWeight: "600",
+  },
+  pagerLabel: {
+    color: "#444",
+    fontSize: 12,
+    paddingHorizontal: 6,
   },
 
   /* Graph Styles */

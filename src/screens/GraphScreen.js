@@ -35,6 +35,7 @@ import { useResponsiveLayout } from "../theme/responsive";
 
 const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll space
 const MAX_GRAPH_POINTS = 100;
+const HISTORY_PAGE_SIZE = 500;
 const OFFLINE_STALE_HYSTERESIS_COUNT = 2;
 const LIVE_POLL_MS = 5000;
 const TOOLTIP_WIDTH = 170;
@@ -260,6 +261,10 @@ const handleManualDate = (field, text) => {
   const [liveNotice, setLiveNotice] = useState("");
   const [offlineDevices, setOfflineDevices] = useState([]);
   const [historyNotice, setHistoryNotice] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyPageCount, setHistoryPageCount] = useState(0);
+  const [historyTotalPoints, setHistoryTotalPoints] = useState(0);
+  const [historyFull, setHistoryFull] = useState({});
   const [chartTooltips, setChartTooltips] = useState({});
   const offlineStreakRef = useRef({});
   const lastLiveTsRef = useRef({});
@@ -407,6 +412,47 @@ const handleManualDate = (field, text) => {
 
   // --- Historical Data Handling ---
 
+  const getHistoryTotalPoints = (fullHistory) => {
+    let maxPoints = 0;
+    Object.values(fullHistory || {}).forEach((history) => {
+      const count = Array.isArray(history?.timestamps) ? history.timestamps.length : 0;
+      if (count > maxPoints) maxPoints = count;
+    });
+    return maxPoints;
+  };
+
+  const applyHistoryPage = (fullHistory, page) => {
+    const start = page * HISTORY_PAGE_SIZE;
+    const end = start + HISTORY_PAGE_SIZE;
+    const paged = {};
+
+    Object.entries(fullHistory || {}).forEach(([deviceId, history]) => {
+      if (!history) return;
+      if (history.type === "press") {
+        const nextPress = {};
+        Object.entries(history.press || {}).forEach(([pid, series]) => {
+          nextPress[pid] = (series || []).slice(start, end);
+        });
+        paged[deviceId] = {
+          ...history,
+          labels: (history.labels || []).slice(start, end),
+          timestamps: (history.timestamps || []).slice(start, end),
+          press: nextPress,
+        };
+      } else {
+        paged[deviceId] = {
+          ...history,
+          labels: (history.labels || []).slice(start, end),
+          timestamps: (history.timestamps || []).slice(start, end),
+          temp: (history.temp || []).slice(start, end),
+          hum: (history.hum || []).slice(start, end),
+        };
+      }
+    });
+
+    return paged;
+  };
+
   const buildHistoryFromReadings = (sourceReadings, startTs, endTs, normalizedTargetId = "") => {
     const nextHistory = {};
 
@@ -459,21 +505,21 @@ const handleManualDate = (field, text) => {
       const timeLabel = formatTimeLabel(ts);
 
       const devData = nextHistory[deviceId];
-      devData.labels = [...(devData.labels || []), timeLabel].slice(-MAX_GRAPH_POINTS);
-      devData.timestamps = [...(devData.timestamps || []), ts].slice(-MAX_GRAPH_POINTS);
+      devData.labels = [...(devData.labels || []), timeLabel];
+      devData.timestamps = [...(devData.timestamps || []), ts];
 
       if (isPress) {
         devData.type = "press";
         devData.press = devData.press || {};
         pressList.forEach((p) => {
           devData.press[p.id] = devData.press[p.id] || [];
-          devData.press[p.id] = [...devData.press[p.id], normalizeMetric(p.amps)].slice(-MAX_GRAPH_POINTS);
+          devData.press[p.id] = [...devData.press[p.id], normalizeMetric(p.amps)];
         });
       } else {
         if (!hasEnv) return;
         devData.type = "env";
-        devData.temp = [...(devData.temp || []), normalizeMetric(envVals.temperature)].slice(-MAX_GRAPH_POINTS);
-        devData.hum = [...(devData.hum || []), normalizeMetric(envVals.humidity)].slice(-MAX_GRAPH_POINTS);
+        devData.temp = [...(devData.temp || []), normalizeMetric(envVals.temperature)];
+        devData.hum = [...(devData.hum || []), normalizeMetric(envVals.humidity)];
       }
     });
 
@@ -601,7 +647,13 @@ const handleManualDate = (field, text) => {
 
       console.log("GraphScreen: Resulting History Keys:", Object.keys(nextHistory));
 
-      setDeviceHistory(nextHistory);
+      const totalPoints = getHistoryTotalPoints(nextHistory);
+      const pageCount = totalPoints ? Math.ceil(totalPoints / HISTORY_PAGE_SIZE) : 0;
+      setHistoryFull(nextHistory);
+      setHistoryTotalPoints(totalPoints);
+      setHistoryPageCount(pageCount);
+      setHistoryPage(0);
+      setDeviceHistory(applyHistoryPage(nextHistory, 0));
 
       if (matchCount === 0) {
         if (targetDeviceId) {
@@ -633,7 +685,13 @@ const handleManualDate = (field, text) => {
   };
 
   const handleModeHistory = () => {
-    handleSearch();
+    setViewMode('history');
+    setDeviceHistory({});
+    setChartTooltips({});
+    setLiveNotice("");
+    setOfflineDevices([]);
+    setHistoryNotice("");
+    setHistoryPage(0);
   };
 
   // Always default to live mode when Graph screen is focused from navigation.
@@ -648,6 +706,12 @@ const handleManualDate = (field, text) => {
     });
     return unsubscribe;
   }, [navigation]);
+
+  useEffect(() => {
+    if (viewMode !== 'history') return;
+    if (!historyPageCount) return;
+    setDeviceHistory(applyHistoryPage(historyFull, historyPage));
+  }, [viewMode, historyFull, historyPage, historyPageCount]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -818,6 +882,28 @@ const handleManualDate = (field, text) => {
             )}
           </TouchableOpacity>
         </View>
+        )}
+        {viewMode === 'history' && historyPageCount > 1 && (
+          <View style={styles.pagerRow}>
+            <TouchableOpacity
+              style={[styles.pagerBtn, historyPage === 0 && styles.pagerBtnDisabled]}
+              onPress={() => setHistoryPage((p) => Math.max(0, p - 1))}
+              disabled={historyPage === 0}
+            >
+              <Text style={styles.pagerText}>Prev</Text>
+            </TouchableOpacity>
+            <Text style={styles.pagerLabel}>
+              Page {historyPage + 1} / {historyPageCount} ({historyTotalPoints === 0 ? 0 : historyPage * HISTORY_PAGE_SIZE + 1}-
+              {Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, historyTotalPoints)} of {historyTotalPoints})
+            </Text>
+            <TouchableOpacity
+              style={[styles.pagerBtn, historyPage + 1 >= historyPageCount && styles.pagerBtnDisabled]}
+              onPress={() => setHistoryPage((p) => Math.min(historyPageCount - 1, p + 1))}
+              disabled={historyPage + 1 >= historyPageCount}
+            >
+              <Text style={styles.pagerText}>Next</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* --- Graph Visualizations (Multi-Device) --- */}
@@ -1258,6 +1344,32 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 6,
     paddingHorizontal: 10,
+  },
+  pagerRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pagerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#e3e3e3',
+  },
+  pagerBtnDisabled: {
+    opacity: 0.5,
+  },
+  pagerText: {
+    color: '#000',
+    fontWeight: '600',
+  },
+  pagerLabel: {
+    color: '#444',
+    fontSize: 12,
+    paddingHorizontal: 6,
   },
   modeToggleRow: {
     flexDirection: 'row',
