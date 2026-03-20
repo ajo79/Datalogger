@@ -27,9 +27,11 @@ import {
   decodeAllParamsSnapshot,
   decodeStatus,
   decodeTelemetry,
+  decodeUtf8Text,
   encodeFloatParam,
   encodeParam1Epoch,
   encodeThresholdPair,
+  encodeUtf8Text,
 } from "../ble/bleCodec";
 import { navigateToTabRoute } from "../navigation/navHelpers";
 
@@ -269,6 +271,8 @@ export default function SettingsScreen({ navigation }) {
   const [lastStatusLine, setLastStatusLine] = useState("-");
   const [statusHistory, setStatusHistory] = useState([]);
   const [liveTelemetry, setLiveTelemetry] = useState(EMPTY_TELEMETRY);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [busyRecipientAction, setBusyRecipientAction] = useState(null);
 
   const telemetryView = (() => {
     if (
@@ -462,6 +466,76 @@ export default function SettingsScreen({ navigation }) {
     }
   }, [applySnapshotToForm, pushStatusLine]);
 
+  const readBleTextCharacteristic = useCallback(async (charUuid) => {
+    const device = connectedDeviceRef.current;
+    if (!device) throw new Error("Connect to BIOT BLE device first.");
+    const characteristic = await device.readCharacteristicForService(BLE_SERVICE_UUID, charUuid);
+    return decodeUtf8Text(characteristic?.value || "").trim();
+  }, []);
+
+  const readRecipientEmail = useCallback(
+    async ({ silent = false } = {}) => {
+      const device = connectedDeviceRef.current;
+      if (!device) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("BLE", "Connect to BIOT BLE device first.");
+        }
+        return false;
+      }
+
+      try {
+        setBusyRecipientAction("read");
+        const recipient = await readBleTextCharacteristic(BLE_CHAR_UUIDS.emailRecipient);
+
+        if (isUnmountingRef.current) return false;
+        setRecipientEmail(recipient || "");
+        pushStatusLine(`${new Date().toLocaleTimeString()} - Receiver email read`);
+        return true;
+      } catch (e) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("Read failed", e?.message || "Unable to read receiver email.");
+        }
+        return false;
+      } finally {
+        if (!isUnmountingRef.current) {
+          setBusyRecipientAction(null);
+        }
+      }
+    },
+    [pushStatusLine, readBleTextCharacteristic]
+  );
+
+  const writeRecipientEmail = useCallback(async () => {
+    const device = connectedDeviceRef.current;
+    if (!device) {
+      Alert.alert("BLE", "Connect to BIOT BLE device first.");
+      return;
+    }
+
+    const value = String(recipientEmail || "").trim();
+    if (!value) {
+      Alert.alert("Missing data", "Receiver email is required.");
+      return;
+    }
+
+    try {
+      setBusyRecipientAction("write");
+      await device.writeCharacteristicWithResponseForService(
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUIDS.emailRecipient,
+        encodeUtf8Text(value)
+      );
+      setRecipientEmail(value);
+      pushStatusLine(`${new Date().toLocaleTimeString()} - Updated receiver email`);
+    } catch (e) {
+      Alert.alert("Write failed", e?.message || "Unable to update receiver email.");
+    } finally {
+      if (!isUnmountingRef.current) {
+        setBusyRecipientAction(null);
+      }
+    }
+  }, [pushStatusLine, recipientEmail]);
+
   const connectToDevice = useCallback(
     async (device) => {
       if (connectingRef.current || disconnectingRef.current) return;
@@ -502,6 +576,7 @@ export default function SettingsScreen({ navigation }) {
         });
 
         await readSnapshot();
+        await readRecipientEmail({ silent: true });
       } catch (e) {
         if (!disconnectingRef.current && !isUnmountingRef.current) {
           Alert.alert("BLE connect failed", e?.message || "Unable to connect.");
@@ -514,7 +589,14 @@ export default function SettingsScreen({ navigation }) {
         }
       }
     },
-    [clearConnectionState, clearDisconnectListener, monitorBleNotifications, pushStatusLine, readSnapshot]
+    [
+      clearConnectionState,
+      clearDisconnectListener,
+      monitorBleNotifications,
+      pushStatusLine,
+      readRecipientEmail,
+      readSnapshot,
+    ]
   );
 
   const scanForBleDevices = useCallback(async () => {
@@ -971,6 +1053,51 @@ export default function SettingsScreen({ navigation }) {
           </View>
         ))}
 
+        <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Email Alert Config</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.infoLine}>BLE: recipient (...00f6)</Text>
+
+            <TouchableOpacity
+              style={[styles.setBtn, styles.secondaryBtn, styles.readEmailBtn]}
+              onPress={() => readRecipientEmail()}
+              disabled={!isConnected || isDisconnecting || busyRecipientAction !== null}
+            >
+              {busyRecipientAction === "read" ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.readEmailBtnText}>READ RECEIVER</Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.fieldHeading}>Receiver Email</Text>
+            <View style={styles.multiplierRow}>
+              <TextInput
+                style={styles.settingInputWide}
+                value={recipientEmail}
+                onChangeText={setRecipientEmail}
+                placeholder="Recipient email"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
+              <TouchableOpacity
+                style={[styles.setBtn, styles.primaryBtn, styles.inlineSetBtn]}
+                onPress={writeRecipientEmail}
+                disabled={!isConnected || isDisconnecting || busyRecipientAction !== null}
+              >
+                {busyRecipientAction === "write" ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.setBtnText}>SET</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>BLE Activity</Text>
           <Text style={styles.valueText}>{lastStatusLine}</Text>
@@ -1244,6 +1371,28 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignSelf: "flex-end",
     paddingHorizontal: 16,
+  },
+  inlineSetBtn: {
+    marginTop: 0,
+    alignSelf: "auto",
+    minWidth: 82,
+  },
+  readEmailBtn: {
+    marginTop: 0,
+    marginBottom: 12,
+    alignSelf: "flex-start",
+  },
+  readEmailBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  fieldHeading: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1f1f1f",
+    marginBottom: 6,
   },
   setBtnText: {
     color: "#171717",

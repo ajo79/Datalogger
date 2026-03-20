@@ -52,11 +52,12 @@ npm run test
 
 ### Poll intervals
 
-- `DashboardScreen`: `AUTO_REFRESH_MS = 1000`
-- `HomeScreen`: `AUTO_REFRESH_MS = 1000`
-- `GraphScreen` live loop: `setInterval(..., 1000)`
-- `GraphShowScreen`: `LIVE_POLL_MS = 1000`
+- `DashboardScreen`: `AUTO_REFRESH_MS = 5000`
+- `HomeScreen`: `AUTO_REFRESH_MS = 5000`
+- `GraphScreen`: `LIVE_POLL_MS = 5000`
+- `GraphShowScreen`: `LIVE_POLL_MS = 5000`
 - `AlarmScreen`: focused interval `1000`
+- `SettingsScreen`: local mobile epoch display timer `1000` (UI clock only)
 
 ### Offline threshold
 
@@ -74,6 +75,8 @@ npm run test
 
 - History/export should use `fetchAllIoTReadings(...)`.
 - Filter window is based on normalized device timestamp aliases (`tsEpochMs` path).
+- `GraphScreen` history uses date range (`startDate` + `endDate`) with optional `deviceId` filter.
+- `GraphScreen` may retry history fetch with device-scoped queries when all-device query returns no matches.
 - CSV output is sorted newest first.
 
 ## 7. BLE Workflows

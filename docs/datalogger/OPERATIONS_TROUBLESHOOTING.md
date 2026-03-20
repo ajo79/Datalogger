@@ -36,9 +36,11 @@ Checks:
 Checks:
 
 1. Validate date format in UI (`DD-MM-YYYY`).
-2. Confirm selected range contains records.
-3. Confirm records pass BIOT schema validity (`_schemaValid`).
-4. Confirm timestamp aliases normalize correctly (`tsEpochMs`/`ts_epoch_ms`).
+2. Confirm selected start/end range contains records (same-day search is valid and uses end-of-day inclusive timestamp).
+3. If using GraphScreen with empty device field, retry with explicit device ID to isolate query behavior.
+4. Confirm records pass BIOT schema validity (`_schemaValid`).
+5. Confirm timestamp aliases normalize correctly (`tsEpochMs`/`ts_epoch_ms`).
+6. Inspect logs for GraphScreen device-scoped fallback retry path when broad query returns zero matches.
 
 ## D. Alarm screen empty
 
@@ -74,6 +76,9 @@ Checks:
   - `GraphScreen`
   - `GraphShowScreen`
   - `AlarmScreen`
+- Current baseline:
+  - Home/Dashboard/Graph/GraphShow: `5000` ms
+  - Alarm (focused): `1000` ms
 
 ## Offline classification
 

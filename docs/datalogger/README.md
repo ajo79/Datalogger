@@ -34,3 +34,5 @@ When docs conflict with code, use these files as runtime truth:
 - Data/API normalization: `src/api/dataService.js`
 - Health classification: `src/utils/deviceHealth.js`
 - BLE behavior: `src/screens/SettingsScreen.js`, `src/screens/FactorySettingsScreen.js`, `src/ble/`
+- UI tokens/responsive rules: `src/theme/`
+- Reusable UI primitives: `src/components/ui/`

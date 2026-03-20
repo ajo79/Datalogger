@@ -18,8 +18,8 @@
 
 ## 3. Data and Refresh Tests
 
-1. Home auto-refresh updates every 1 second.
-2. Dashboard auto-refresh updates every 1 second.
+1. Home auto-refresh updates every 5 seconds.
+2. Dashboard auto-refresh updates every 5 seconds.
 3. Alarm list auto-refresh updates every 1 second.
 4. Fast status warm cache hydrates Home/Dashboard on startup when recent data exists.
 5. Online/offline status changes with timestamp staleness and publish-interval dynamic thresholding.
@@ -27,10 +27,11 @@
 ## 4. Graph Tests
 
 1. Graph screen live mode shows incoming values.
-2. Graph screen history mode returns selected-date data.
+2. Graph screen history mode returns selected date-range data (including same-day `startDate == endDate`).
 3. GraphShow live mode tracks selected device only.
 4. GraphShow history mode applies start/end date correctly.
-5. History filtering is based on `tsEpochMs`.
+5. History filtering is based on `tsEpochMs` and applies optional `deviceId` filter when entered.
+6. Graph screen all-device history can recover via device-scoped fallback query path when broad query has zero matches.
 
 ## 5. Export Tests
 

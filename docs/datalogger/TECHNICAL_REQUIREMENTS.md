@@ -90,7 +90,10 @@ History/graph/export accuracy depends on valid numeric device timestamps.
 
 ## 6. Performance/Runtime Assumptions
 
-- Polling cadence on core screens: 1 second.
+- Polling cadence:
+  - Home/Dashboard/Graph/GraphShow: 5 seconds.
+  - Alarm (focused): 1 second.
+  - Settings local mobile epoch display timer: 1 second (UI-only).
 - Default API timeout: 60 seconds.
 - Fast status timeout: 5 seconds.
 - Fast status cache max age: 30 seconds.

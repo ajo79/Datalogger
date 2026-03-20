@@ -1,6 +1,6 @@
 # Datalogger Mobile App Architecture
 
-Last reviewed: 2026-03-03
+Last reviewed: 2026-03-05
 
 ## 1. Tech Stack
 
@@ -19,6 +19,9 @@ Last reviewed: 2026-03-03
 - Export/share:
   - `react-native-fs`
   - `react-native-share`
+- UI foundation:
+  - design tokens and responsive helpers in `src/theme/`
+  - reusable UI primitives in `src/components/ui/`
 
 ## 2. Runtime Entry and Navigation
 
@@ -123,14 +126,14 @@ Implemented in `src/utils/deviceHealth.js`.
 ### Dashboard
 
 - Uses fast status API path with warm cache.
-- Poll interval: 1 second.
+- Poll interval: 5 seconds.
 - Health summary cards and pie chart.
 - Card press routes to `Home` with filters.
 
 ### Home
 
 - Uses fast status API path with warm cache.
-- Poll interval: 1 second.
+- Poll interval: 5 seconds.
 - Device filters: all/good/issue.
 - Card action buttons:
   - `GraphShow`
@@ -142,18 +145,20 @@ Implemented in `src/utils/deviceHealth.js`.
 
 - Mode toggle: `live` / `history`.
 - Live:
-  - polls every 1 second via `fetchRealTimeDataMonitor`
+  - polls every 5 seconds via `fetchRealTimeDataMonitor`
   - tracks per-device trend series, capped to 100 points
 - History:
-  - date-based query via `fetchAllIoTReadings`
+  - date-range query via `fetchAllIoTReadings` (start-of-day to end-of-day, inclusive)
+  - optional device filter via `historyDeviceId`
   - filters with `tsEpochMs` range boundaries
+  - if all-device query returns no matches, retries device-scoped history fetches
   - per-device trend series, capped to 100 points
 
 ### GraphShow
 
 - Device-specific trend view.
 - Live mode:
-  - polls every 1 second
+  - polls every 5 seconds
   - appends new points only when timestamp changes
   - caps points to 100
 - History mode:
@@ -269,6 +274,6 @@ Codec in `src/ble/bleCodec.js` handles base64 and binary payload encoding/decodi
 
 - Local auth and plain AsyncStorage are not production-grade security.
 - API URL is hardcoded in app code.
-- High-frequency polling (1s on multiple screens) can impact battery/data.
+- Periodic polling still impacts battery/data (5s for Home/Dashboard/Graph/GraphShow, 1s focused refresh on Alarm).
 - `SignUp` currently navigates to Home even when data is invalid.
 - Mixed static/demo screens remain in runtime stacks (`DeviceInformation`, `PageFirst`).

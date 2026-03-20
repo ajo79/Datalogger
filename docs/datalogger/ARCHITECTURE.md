@@ -9,6 +9,7 @@
 - alarm table
 - CSV export
 - BLE runtime and factory configuration
+- UI design tokens/responsive helpers (`src/theme/`) and reusable UI primitives (`src/components/ui/`)
 
 ## 2. Runtime Flow
 
@@ -68,10 +69,10 @@ In `src/utils/deviceHealth.js`:
 
 ## 5. Polling Model
 
-- Home: `1000` ms
-- Dashboard: `1000` ms
-- Graph live mode: `1000` ms
-- GraphShow live mode: `1000` ms
+- Home: `5000` ms
+- Dashboard: `5000` ms
+- Graph live mode: `5000` ms
+- GraphShow live mode: `5000` ms
 - Alarm (focused): `1000` ms
 - Settings screen also updates local mobile epoch display every `1000` ms
 

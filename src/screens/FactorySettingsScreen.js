@@ -21,6 +21,7 @@ import { decodeUtf8Text, encodeUtf8Text } from "../ble/bleCodec";
 
 const FACTORY_UNLOCK_PASSWORD = "blackstar";
 const SCAN_TIMEOUT_MS = 12000;
+const MASKED_EMAIL_PASSWORD = "********";
 
 function getBleDeviceDisplayName(device) {
   const name = device?.name || device?.localName || BLE_DEVICE_NAME;
@@ -51,6 +52,9 @@ export default function FactorySettingsScreen({ navigation }) {
   const [wifiSsid, setWifiSsid] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
   const [deviceIdValue, setDeviceIdValue] = useState("");
+  const [emailSender, setEmailSender] = useState("");
+  const [emailAppPassword, setEmailAppPassword] = useState("");
+  const [busyEmailField, setBusyEmailField] = useState(null);
 
   const [statusLine, setStatusLine] = useState("-");
 
@@ -107,6 +111,7 @@ export default function FactorySettingsScreen({ navigation }) {
     setIsConnecting(false);
     setIsDisconnecting(false);
     setIsSending(false);
+    setBusyEmailField(null);
   }, []);
 
   const readDeviceIdFromBle = useCallback(
@@ -140,6 +145,109 @@ export default function FactorySettingsScreen({ navigation }) {
     [pushStatus]
   );
 
+  const readBleTextCharacteristic = useCallback(async (device, charUuid) => {
+    const characteristic = await device.readCharacteristicForService(BLE_SERVICE_UUID, charUuid);
+    return decodeUtf8Text(characteristic?.value || "").trim();
+  }, []);
+
+  const readFactoryEmailConfig = useCallback(
+    async (deviceOverride = null, { silent = false } = {}) => {
+      const device = deviceOverride || connectedDeviceRef.current;
+      if (!device) {
+        if (!silent) {
+          Alert.alert("BLE", "Connect to a BLE device first.");
+        }
+        return false;
+      }
+
+      try {
+        setBusyEmailField("read");
+        const sender = await readBleTextCharacteristic(device, BLE_CHAR_UUIDS.emailSender);
+        const appPassword = await readBleTextCharacteristic(device, BLE_CHAR_UUIDS.emailAppPassword);
+        setEmailSender(sender || "");
+        setEmailAppPassword(appPassword || "");
+        if (!silent) {
+          pushStatus("Factory email settings read from device");
+        }
+        return true;
+      } catch (e) {
+        if (!silent) {
+          Alert.alert("Read failed", e?.message || "Unable to read factory email settings.");
+        }
+        return false;
+      } finally {
+        if (!isUnmountingRef.current) {
+          setBusyEmailField(null);
+        }
+      }
+    },
+    [pushStatus, readBleTextCharacteristic]
+  );
+
+  const writeFactoryEmailField = useCallback(
+    async (field) => {
+      if (!isUnlocked) {
+        Alert.alert("Access denied", "Unlock factory settings first.");
+        return;
+      }
+
+      const device = connectedDeviceRef.current;
+      if (!device) {
+        Alert.alert("BLE", "Connect to a BLE device first.");
+        return;
+      }
+
+      let charUuid = "";
+      let label = "";
+      let value = "";
+
+      if (field === "sender") {
+        charUuid = BLE_CHAR_UUIDS.emailSender;
+        label = "Sender email";
+        value = String(emailSender || "").trim();
+      } else if (field === "appPassword") {
+        charUuid = BLE_CHAR_UUIDS.emailAppPassword;
+        label = "App password";
+        value = String(emailAppPassword || "").trim();
+      } else {
+        return;
+      }
+
+      if (!value) {
+        Alert.alert("Missing data", `${label} is required.`);
+        return;
+      }
+
+      if (field === "appPassword" && value === MASKED_EMAIL_PASSWORD) {
+        Alert.alert("No change", "App password is masked. Enter a new app password to update it.");
+        return;
+      }
+
+      try {
+        setBusyEmailField(field);
+        await device.writeCharacteristicWithResponseForService(
+          BLE_SERVICE_UUID,
+          charUuid,
+          encodeUtf8Text(value)
+        );
+        if (field === "sender") {
+          setEmailSender(value);
+        } else {
+          setEmailAppPassword(MASKED_EMAIL_PASSWORD);
+        }
+        pushStatus(`${label} updated`);
+        Alert.alert("Success", `${label} updated on ESP32.`);
+      } catch (e) {
+        Alert.alert("Send failed", e?.message || `Unable to update ${label}.`);
+      } finally {
+        if (!isUnmountingRef.current) {
+          setBusyEmailField(null);
+        }
+      }
+    },
+    [emailAppPassword, emailSender, isUnlocked, pushStatus]
+  );
+
   const connectToDevice = useCallback(
     async (device) => {
       if (!device || isConnecting || isDisconnecting) return;
@@ -159,6 +267,7 @@ export default function FactorySettingsScreen({ navigation }) {
         setIsDeviceDropdownOpen(false);
         pushStatus(`Connected to ${getBleDeviceDisplayName(ready)}`);
         await readDeviceIdFromBle(ready, { silent: true });
+        await readFactoryEmailConfig(ready, { silent: true });
 
         clearDisconnectListener();
         disconnectSubRef.current = managerRef.current.onDeviceDisconnected(ready.id, (error) => {
@@ -183,6 +292,7 @@ export default function FactorySettingsScreen({ navigation }) {
       isConnecting,
       isDisconnecting,
       pushStatus,
+      readFactoryEmailConfig,
       readDeviceIdFromBle,
     ]
   );
@@ -488,6 +598,7 @@ export default function FactorySettingsScreen({ navigation }) {
 
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>Device Identity</Text>
+              <Text style={styles.fieldHeading}>Device ID</Text>
               <TextInput
                 style={styles.input}
                 value={deviceIdValue}
@@ -522,6 +633,7 @@ export default function FactorySettingsScreen({ navigation }) {
 
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>Wi-Fi Credentials</Text>
+              <Text style={styles.fieldHeading}>Wi-Fi SSID</Text>
               <TextInput
                 style={styles.input}
                 value={wifiSsid}
@@ -530,6 +642,7 @@ export default function FactorySettingsScreen({ navigation }) {
                 placeholderTextColor="#7a7a7a"
                 autoCapitalize="none"
               />
+              <Text style={styles.fieldHeading}>Wi-Fi Password</Text>
               <TextInput
                 style={styles.input}
                 value={wifiPassword}
@@ -553,6 +666,69 @@ export default function FactorySettingsScreen({ navigation }) {
               <Text style={styles.helperText}>
                 Writes SSID and password to ESP32 using BLE characteristics.
               </Text>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>Email Alert (Factory)</Text>
+              <Text style={styles.helperText}>
+                Sender and app password are stored in ESP32 and used for SMTP alerts.
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, styles.secondaryBtn]}
+                onPress={() => readFactoryEmailConfig()}
+                disabled={!isConnected || isDisconnecting || isSending || busyEmailField !== null}
+              >
+                {busyEmailField === "read" ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.secondaryBtnText}>Read Email Config</Text>
+                )}
+              </TouchableOpacity>
+
+              <Text style={[styles.fieldHeading, styles.inputLabelSpacing]}>Sender Email</Text>
+              <TextInput
+                style={styles.input}
+                value={emailSender}
+                onChangeText={setEmailSender}
+                placeholder="Sender email"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => writeFactoryEmailField("sender")}
+                disabled={!isConnected || isDisconnecting || isSending || busyEmailField !== null}
+              >
+                {busyEmailField === "sender" ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Set Sender</Text>
+                )}
+              </TouchableOpacity>
+
+              <Text style={[styles.fieldHeading, styles.inputLabelSpacing]}>App Password</Text>
+              <TextInput
+                style={styles.input}
+                value={emailAppPassword}
+                onChangeText={setEmailAppPassword}
+                placeholder="Gmail app password"
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+              />
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => writeFactoryEmailField("appPassword")}
+                disabled={!isConnected || isDisconnecting || isSending || busyEmailField !== null}
+              >
+                {busyEmailField === "appPassword" ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Set App Password</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -748,6 +924,15 @@ const styles = StyleSheet.create({
     color: "#6b6b6b",
     fontSize: 12,
     marginTop: 8,
+  },
+  fieldHeading: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1f1f1f",
+    marginBottom: 6,
+  },
+  inputLabelSpacing: {
+    marginTop: 10,
   },
   errorText: {
     color: "#c62828",

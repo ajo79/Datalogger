@@ -87,7 +87,7 @@ Native tab bar is hidden. Screen UIs render custom bottom wave navigation.
 
 ## DashboardScreen
 
-- Polls fast status every 1 second.
+- Polls fast status every 5 seconds.
 - Uses health summary (`total`, `online`, `good`, `issue`).
 - Card tap routes to Home with filter:
   - `all`, `good`, `issue`.
@@ -95,7 +95,7 @@ Native tab bar is hidden. Screen UIs render custom bottom wave navigation.
 
 ## HomeScreen
 
-- Polls fast status every 1 second.
+- Polls fast status every 5 seconds.
 - Uses warm cache on first render.
 - Filter chips:
   - All, Good, Issue.
@@ -107,10 +107,12 @@ Native tab bar is hidden. Screen UIs render custom bottom wave navigation.
 
 ## GraphScreen
 
-- Date input and picker (`DD-MM-YYYY`).
+- Start/end date inputs and picker (`DD-MM-YYYY`) with optional device ID filter.
 - Mode toggle:
-  - `Live`: polls every 1 second using realtime monitor API.
-  - `History`: single-date history query via `fetchAllIoTReadings`.
+  - `Live`: polls every 5 seconds using realtime monitor API.
+  - `History`: date-range history query via `fetchAllIoTReadings` (start-of-day to end-of-day, inclusive).
+- History fallback:
+  - If all-device history query returns zero matches, retries with device-scoped queries for discovered device IDs.
 - Supports env or press-metric multi-series charts.
 - Displays notices for no data/offline conditions.
 
@@ -121,7 +123,7 @@ Native tab bar is hidden. Screen UIs render custom bottom wave navigation.
   - parent-aware `goBack`
   - fallback reset to `Home`.
 - Modes:
-  - `Live`: selected-device polling every 1 second.
+  - `Live`: selected-device polling every 5 seconds.
   - `History`: date-range query via `fetchAllIoTReadings`.
 - Download button routes to `Export` with device/date params.
 

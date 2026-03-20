@@ -19,6 +19,10 @@ export const BLE_CHAR_UUIDS = {
   // Factory credential writes (firmware must expose matching characteristics)
   wifiSsid: withSuffix("00fb"),
   wifiPassword: withSuffix("00fa"),
+  // Alarm-email configuration (firmware with email support)
+  emailSender: withSuffix("00f8"),
+  emailAppPassword: withSuffix("00f7"),
+  emailRecipient: withSuffix("00f6"),
   allParams: withSuffix("00ff"),
   status: withSuffix("00fe"),
   liveTelemetry: withSuffix("00fd"),

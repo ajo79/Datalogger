@@ -39,6 +39,8 @@ cd ios && bundle exec pod install && cd ..
 - `src/api/`: API and normalization logic
 - `src/storage/`: AsyncStorage wrappers
 - `src/ble/`: BLE UUID contract and payload codec
+- `src/theme/`: design tokens and responsive layout helpers
+- `src/components/ui/`: reusable UI primitives (header/card/button/input/chip/banner)
 - `docs/datalogger/`: maintained technical docs
 
 ## Documentation

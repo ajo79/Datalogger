@@ -42,7 +42,8 @@
 - Always clear intervals/timeouts in cleanup.
 - Prevent overlapping network calls with in-flight guards.
 - Avoid creating duplicate polling loops on re-renders.
-- Keep high-frequency polling (`1000` ms) only where UX requires it.
+- Prefer `5000` ms cadence for network polling unless screen behavior explicitly requires faster refresh.
+- Keep `1000` ms loops only for focused alarm refresh and local UI timers (for example, mobile epoch display).
 
 ## 7. Error Handling
 

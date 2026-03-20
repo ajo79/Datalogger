@@ -29,6 +29,17 @@ Used by `fetchFastDeviceStatus`.
 
 Used by `fetchAllIoTReadings`.
 
+Screen usage notes:
+
+- `GraphScreen` history:
+  - sends date-range filters (`startTsEpochMs`, `endTsEpochMs`)
+  - optionally sends `deviceId`
+  - may retry with device-scoped requests if all-device query yields zero matches
+- `GraphShowScreen` history:
+  - always sends selected `deviceId` with date-range filters
+- `ExportScreen`:
+  - sends date-range filters with optional `deviceId`
+
 Query fields sent by app:
 
 - `iotReadingsOnly=1`
