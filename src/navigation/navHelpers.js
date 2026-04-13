@@ -26,6 +26,28 @@ export function navigateToTabRoute(navigation, routeName) {
   navigation?.navigate?.(routeName);
 }
 
+export function goBackWithFallback(navigation, fallbackRoute = "Home") {
+  const chain = [
+    navigation,
+    navigation?.getParent?.(),
+    navigation?.getParent?.()?.getParent?.(),
+  ].filter(Boolean);
+
+  for (const nav of chain) {
+    if (nav?.canGoBack?.()) {
+      nav.goBack();
+      return true;
+    }
+  }
+
+  if (fallbackRoute) {
+    navigateToTabRoute(navigation, fallbackRoute);
+    return true;
+  }
+
+  return false;
+}
+
 export function logoutToAuthRoot(navigation) {
   const candidates = [
     navigation,

@@ -1,9 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  ImageBackground,
   PermissionsAndroid,
   Platform,
   SafeAreaView,
@@ -33,7 +31,8 @@ import {
   encodeThresholdPair,
   encodeUtf8Text,
 } from "../ble/bleCodec";
-import { navigateToTabRoute } from "../navigation/navHelpers";
+import { useAppTheme } from "../theme";
+import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 
 const defaultForm = {
   param1Epoch: "",
@@ -88,6 +87,7 @@ function statusText(statusCode) {
 }
 
 const EMPTY_TELEMETRY = { raw: "-", fields: [] };
+const DEVICE_NAME_MAX_LENGTH = 63;
 
 function formatNumber(value, decimals = 3) {
   const n = Number(value);
@@ -235,7 +235,8 @@ function buildTelemetryView(parsed) {
 }
 
 export default function SettingsScreen({ navigation }) {
-  const navigateToTab = (route) => navigateToTabRoute(navigation, route);
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const openMenu = () => {
     try {
@@ -271,6 +272,8 @@ export default function SettingsScreen({ navigation }) {
   const [lastStatusLine, setLastStatusLine] = useState("-");
   const [statusHistory, setStatusHistory] = useState([]);
   const [liveTelemetry, setLiveTelemetry] = useState(EMPTY_TELEMETRY);
+  const [deviceNameValue, setDeviceNameValue] = useState("");
+  const [busyDeviceNameAction, setBusyDeviceNameAction] = useState(null);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [busyRecipientAction, setBusyRecipientAction] = useState(null);
 
@@ -372,6 +375,10 @@ export default function SettingsScreen({ navigation }) {
       setIsConnecting(false);
       setIsDisconnecting(false);
       setBusyParam(null);
+      setDeviceNameValue("");
+      setBusyDeviceNameAction(null);
+      setRecipientEmail("");
+      setBusyRecipientAction(null);
     }
     clearSubscriptions({ removeNative: removeSubscriptions });
     if (removeDisconnectListener) {
@@ -472,6 +479,76 @@ export default function SettingsScreen({ navigation }) {
     const characteristic = await device.readCharacteristicForService(BLE_SERVICE_UUID, charUuid);
     return decodeUtf8Text(characteristic?.value || "").trim();
   }, []);
+
+  const readDeviceName = useCallback(
+    async ({ silent = false } = {}) => {
+      const device = connectedDeviceRef.current;
+      if (!device) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("BLE", "Connect to BIOT BLE device first.");
+        }
+        return false;
+      }
+
+      try {
+        setBusyDeviceNameAction("read");
+        const name = await readBleTextCharacteristic(BLE_CHAR_UUIDS.deviceName);
+
+        if (isUnmountingRef.current) return false;
+        setDeviceNameValue(name || "");
+        pushStatusLine(`${new Date().toLocaleTimeString()} - Device name read`);
+        return true;
+      } catch (e) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("Read failed", e?.message || "Unable to read device name.");
+        }
+        return false;
+      } finally {
+        if (!isUnmountingRef.current) {
+          setBusyDeviceNameAction(null);
+        }
+      }
+    },
+    [pushStatusLine, readBleTextCharacteristic]
+  );
+
+  const writeDeviceName = useCallback(async () => {
+    const device = connectedDeviceRef.current;
+    if (!device) {
+      Alert.alert("BLE", "Connect to BIOT BLE device first.");
+      return;
+    }
+
+    const value = String(deviceNameValue || "").trim();
+    if (!value) {
+      Alert.alert("Missing data", "Device name is required.");
+      return;
+    }
+    if (value.length > DEVICE_NAME_MAX_LENGTH) {
+      Alert.alert(
+        "Too long",
+        `Device name must be ${DEVICE_NAME_MAX_LENGTH} characters or less.`
+      );
+      return;
+    }
+
+    try {
+      setBusyDeviceNameAction("write");
+      await device.writeCharacteristicWithResponseForService(
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUIDS.deviceName,
+        encodeUtf8Text(value)
+      );
+      setDeviceNameValue(value);
+      pushStatusLine(`${new Date().toLocaleTimeString()} - Device name updated`);
+    } catch (e) {
+      Alert.alert("Write failed", e?.message || "Unable to update device name.");
+    } finally {
+      if (!isUnmountingRef.current) {
+        setBusyDeviceNameAction(null);
+      }
+    }
+  }, [deviceNameValue, pushStatusLine]);
 
   const readRecipientEmail = useCallback(
     async ({ silent = false } = {}) => {
@@ -576,6 +653,7 @@ export default function SettingsScreen({ navigation }) {
         });
 
         await readSnapshot();
+        await readDeviceName({ silent: true });
         await readRecipientEmail({ silent: true });
       } catch (e) {
         if (!disconnectingRef.current && !isUnmountingRef.current) {
@@ -593,6 +671,7 @@ export default function SettingsScreen({ navigation }) {
       clearConnectionState,
       clearDisconnectListener,
       monitorBleNotifications,
+      readDeviceName,
       pushStatusLine,
       readRecipientEmail,
       readSnapshot,
@@ -840,20 +919,30 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.topHeader}>
-        <TouchableOpacity
-          onPress={openMenu}
-          style={styles.headerIconBtn}
-        >
-          <Image source={IMAGES.MoreTop} style={styles.headerIcon} />
-        </TouchableOpacity>
-        <Text style={styles.headerText}>BLE SETTING</Text>
-        <TouchableOpacity onPress={readSnapshot} style={styles.headerIconBtn}>
-          <Image source={IMAGES.SettingIcon} style={styles.headerIcon} />
-        </TouchableOpacity>
-      </View>
+      <ModernTopHeader
+        title="BLE SETTING"
+        leftIcon={IMAGES.MoreTop}
+        onLeftPress={openMenu}
+        rightIcon={IMAGES.SettingIcon}
+        onRightPress={readSnapshot}
+      />
 
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Appearance</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.infoLine}>Open Themes to switch app appearance.</Text>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.secondaryBtn, styles.themeOpenBtn]}
+              onPress={() => navigation.navigate("Themes")}
+            >
+              <Text style={styles.actionBtnText}>Themes</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>BLE Connection</Text>
           <Text style={styles.valueText}>Connected: {deviceLabel}</Text>
@@ -865,7 +954,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={isScanning || isConnecting || isDisconnecting}
             >
               {isScanning || isConnecting || isDisconnecting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
               ) : (
                 <Text style={styles.actionBtnText}>Scan BLE</Text>
               )}
@@ -917,7 +1006,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={!selectedDeviceId || isConnecting || isDisconnecting}
             >
               {isConnecting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
               ) : (
                 <Text style={styles.actionBtnText}>Connect</Text>
               )}
@@ -928,7 +1017,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={isDisconnecting}
             >
               {isDisconnecting ? (
-                <ActivityIndicator color="#333" />
+                <ActivityIndicator color={theme.colors.buttonGhostText} />
               ) : (
                 <Text style={styles.ghostBtnText}>Disconnect</Text>
               )}
@@ -949,7 +1038,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={!isConnected || busyParam === "all" || isDisconnecting}
             >
               {busyParam === "all" ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
               ) : (
                 <Text style={styles.actionBtnText}>Write All</Text>
               )}
@@ -971,7 +1060,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={!isConnected || busyParam === 1 || isDisconnecting}
             >
               {busyParam === 1 ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
               ) : (
                 <Text style={styles.setBtnText}>SET TIME</Text>
               )}
@@ -993,6 +1082,7 @@ export default function SettingsScreen({ navigation }) {
                     value={form[cfg.lowerKey]}
                     onChangeText={(txt) => setField(cfg.lowerKey, txt.replace(/[^0-9]/g, ""))}
                     placeholder="0"
+                    placeholderTextColor={theme.colors.inputPlaceholder}
                     keyboardType="numeric"
                   />
                 </View>
@@ -1004,6 +1094,7 @@ export default function SettingsScreen({ navigation }) {
                     value={form[cfg.upperKey]}
                     onChangeText={(txt) => setField(cfg.upperKey, txt.replace(/[^0-9]/g, ""))}
                     placeholder="0"
+                    placeholderTextColor={theme.colors.inputPlaceholder}
                     keyboardType="numeric"
                   />
                 </View>
@@ -1014,7 +1105,7 @@ export default function SettingsScreen({ navigation }) {
                 disabled={!isConnected || busyParam === cfg.id || isDisconnecting}
               >
                 {busyParam === cfg.id ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={theme.colors.buttonPrimaryText} />
                 ) : (
                   <Text style={styles.setBtnText}>SET</Text>
                 )}
@@ -1035,6 +1126,7 @@ export default function SettingsScreen({ navigation }) {
                   value={form[cfg.key]}
                   onChangeText={(txt) => setField(cfg.key, txt)}
                   placeholder="Value"
+                  placeholderTextColor={theme.colors.inputPlaceholder}
                   keyboardType="numeric"
                 />
                 <TouchableOpacity
@@ -1043,7 +1135,7 @@ export default function SettingsScreen({ navigation }) {
                   disabled={!isConnected || busyParam === cfg.id || isDisconnecting}
                 >
                   {busyParam === cfg.id ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color={theme.colors.buttonPrimaryText} />
                   ) : (
                     <Text style={styles.setBtnText}>SET</Text>
                   )}
@@ -1052,6 +1144,51 @@ export default function SettingsScreen({ navigation }) {
             </View>
           </View>
         ))}
+
+        <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Device Identity</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.infoLine}>BLE: device name (...00f5)</Text>
+
+            <TouchableOpacity
+              style={[styles.setBtn, styles.secondaryBtn, styles.readEmailBtn]}
+              onPress={() => readDeviceName()}
+              disabled={!isConnected || isDisconnecting || busyDeviceNameAction !== null}
+            >
+              {busyDeviceNameAction === "read" ? (
+                <ActivityIndicator color={theme.colors.buttonSecondaryText} />
+              ) : (
+                <Text style={styles.readEmailBtnText}>READ NAME</Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.fieldHeading}>Device Name</Text>
+            <View style={styles.multiplierRow}>
+              <TextInput
+                style={styles.settingInputWide}
+                value={deviceNameValue}
+                onChangeText={setDeviceNameValue}
+                placeholder="Device name"
+                placeholderTextColor={theme.colors.inputPlaceholder}
+                autoCorrect={false}
+                maxLength={DEVICE_NAME_MAX_LENGTH}
+              />
+              <TouchableOpacity
+                style={[styles.setBtn, styles.primaryBtn, styles.inlineSetBtn]}
+                onPress={writeDeviceName}
+                disabled={!isConnected || isDisconnecting || busyDeviceNameAction !== null}
+              >
+                {busyDeviceNameAction === "write" ? (
+                  <ActivityIndicator color={theme.colors.buttonPrimaryText} />
+                ) : (
+                  <Text style={styles.setBtnText}>SET</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
 
         <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
@@ -1066,7 +1203,7 @@ export default function SettingsScreen({ navigation }) {
               disabled={!isConnected || isDisconnecting || busyRecipientAction !== null}
             >
               {busyRecipientAction === "read" ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.buttonSecondaryText} />
               ) : (
                 <Text style={styles.readEmailBtnText}>READ RECEIVER</Text>
               )}
@@ -1079,6 +1216,7 @@ export default function SettingsScreen({ navigation }) {
                 value={recipientEmail}
                 onChangeText={setRecipientEmail}
                 placeholder="Recipient email"
+                placeholderTextColor={theme.colors.inputPlaceholder}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
@@ -1089,7 +1227,7 @@ export default function SettingsScreen({ navigation }) {
                 disabled={!isConnected || isDisconnecting || busyRecipientAction !== null}
               >
                 {busyRecipientAction === "write" ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={theme.colors.buttonPrimaryText} />
                 ) : (
                   <Text style={styles.setBtnText}>SET</Text>
                 )}
@@ -1128,361 +1266,327 @@ export default function SettingsScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      <ImageBackground source={IMAGES.WaveBottom} style={styles.bottomNavBg} resizeMode="stretch">
-        <View style={styles.navContainer}>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Home")}>
-            <Image source={IMAGES.HomeIcon} style={styles.navIcon} />
-            <Text style={styles.navText}>HOME</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Dashboard")}>
-            <Image source={IMAGES.GraphIcon} style={styles.navIcon} />
-            <Text style={styles.navText}>DASH</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Alarm")}>
-            <Image source={IMAGES.AlarmIcon} style={styles.navIcon} />
-            <Text style={styles.navText}>ALARM</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("More")}>
-            <Image source={IMAGES.MoreIcon} style={styles.navIcon} />
-            <Text style={styles.navText}>MORE</Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernBottomNav
+        navigation={navigation}
+        activeRoute="More"
+        items={[
+          { key: "HOME", label: "HOME", route: "Home", icon: IMAGES.HomeIcon },
+          { key: "DASH", label: "DASH", route: "Dashboard", icon: IMAGES.GraphIcon },
+          { key: "ALARM", label: "ALARM", route: "Alarm", icon: IMAGES.AlarmIcon },
+          { key: "MORE", label: "MORE", route: "More", icon: IMAGES.MoreIcon },
+        ]}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#e8e5e5",
-  },
-  topHeader: {
-    backgroundColor: "#f2b64f",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 14,
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
-  },
-  headerIconBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerIcon: {
-    width: 30,
-    height: 30,
-    resizeMode: "contain",
-  },
-  headerText: {
-    fontSize: 24,
-    letterSpacing: 1,
-    fontWeight: "bold",
-    color: "#000",
-    fontFamily: Platform.OS === "ios" ? "Times New Roman" : "serif",
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 110,
-  },
-  infoCard: {
-    backgroundColor: "#f4f2f2",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#b5b2b2",
-    padding: 12,
-    marginBottom: 14,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#212121",
-    marginBottom: 8,
-  },
-  valueText: {
-    fontSize: 13,
-    color: "#2f2f2f",
-    marginBottom: 8,
-  },
-  rowButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    columnGap: 10,
-  },
-  actionBtn: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-  },
-  primaryBtn: {
-    backgroundColor: "#f9a600",
-  },
-  secondaryBtn: {
-    backgroundColor: "#4f667a",
-  },
-  ghostBtn: {
-    backgroundColor: "#ececec",
-    borderWidth: 1,
-    borderColor: "#c8c8c8",
-  },
-  actionBtnText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  ghostBtnText: {
-    color: "#222",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  dropdownTrigger: {
-    marginTop: 10,
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: "#b8b8b8",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-  },
-  dropdownText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#222",
-    marginRight: 8,
-  },
-  dropdownArrow: {
-    fontSize: 13,
-    color: "#333",
-  },
-  dropdownMenu: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#b8b8b8",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    maxHeight: 220,
-    overflow: "hidden",
-  },
-  dropdownItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#efefef",
-  },
-  dropdownItemActive: {
-    backgroundColor: "#fff7e8",
-  },
-  dropdownItemTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    columnGap: 8,
-  },
-  dropdownItemTitle: {
-    flex: 1,
-    color: "#1f1f1f",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  dropdownItemRssi: {
-    color: "#545454",
-    fontSize: 11,
-  },
-  dropdownItemSub: {
-    color: "#666",
-    fontSize: 11,
-    marginTop: 2,
-  },
-  settingPanel: {
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#8f8f8f",
-    backgroundColor: "#ece9e9",
-    overflow: "hidden",
-    marginBottom: 14,
-  },
-  panelHeader: {
-    backgroundColor: "#f2b64f",
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-  },
-  panelHeaderText: {
-    fontSize: 20,
-    color: "#111",
-    fontFamily: Platform.OS === "ios" ? "Times New Roman" : "serif",
-  },
-  panelBody: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  infoLine: {
-    fontSize: 14,
-    color: "#242424",
-    marginBottom: 6,
-  },
-  thresholdRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 12,
-  },
-  valueGroup: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 6,
-  },
-  valueLabel: {
-    fontSize: 16,
-    color: "#1f1f1f",
-    minWidth: 42,
-    fontFamily: Platform.OS === "ios" ? "Times New Roman" : "serif",
-  },
-  settingInput: {
-    borderWidth: 1,
-    borderColor: "#8f8f8f",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 14,
-    color: "#111",
-    backgroundColor: "#fff",
-    flex: 1,
-  },
-  setBtn: {
-    minHeight: 36,
-    minWidth: 104,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-    alignSelf: "flex-end",
-    paddingHorizontal: 16,
-  },
-  inlineSetBtn: {
-    marginTop: 0,
-    alignSelf: "auto",
-    minWidth: 82,
-  },
-  readEmailBtn: {
-    marginTop: 0,
-    marginBottom: 12,
-    alignSelf: "flex-start",
-  },
-  readEmailBtnText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 12,
-    letterSpacing: 0.3,
-  },
-  fieldHeading: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1f1f1f",
-    marginBottom: 6,
-  },
-  setBtnText: {
-    color: "#171717",
-    fontWeight: "800",
-    fontSize: 13,
-    letterSpacing: 0.4,
-  },
-  multiplierRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 12,
-  },
-  settingInputWide: {
-    borderWidth: 1,
-    borderColor: "#8f8f8f",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 14,
-    color: "#111",
-    backgroundColor: "#fff",
-    flex: 1,
-  },
-  historyText: {
-    color: "#555",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  telemetryText: {
-    fontSize: 12,
-    color: "#333",
-    lineHeight: 18,
-  },
-  telemetryList: {
-    rowGap: 2,
-  },
-  telemetryRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f2f2f2",
-  },
-  telemetryLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#111",
-    paddingRight: 8,
-  },
-  telemetryValue: {
-    flex: 1,
-    fontSize: 12,
-    color: "#333",
-    textAlign: "right",
-  },
-  telemetryRaw: {
-    marginTop: 6,
-    fontSize: 11,
-    color: "#666",
-  },
-  bottomNavBg: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 86,
-  },
-  navContainer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-around",
-    paddingBottom: 10,
-    paddingHorizontal: 10,
-    flex: 1,
-  },
-  navItem: {
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 62,
-  },
-  navIcon: {
-    width: 24,
-    height: 24,
-    resizeMode: "contain",
-    marginBottom: 2,
-  },
-  navText: {
-    fontSize: 11,
-    color: "#111",
-    fontWeight: "700",
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    content: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 116,
+    },
+    infoCard: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+      padding: 12,
+      marginBottom: 14,
+    },
+    infoTitle: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: theme.colors.textPrimary,
+      marginBottom: 8,
+    },
+    valueText: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginBottom: 8,
+    },
+    rowButtons: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: 8,
+      columnGap: 10,
+    },
+    actionBtn: {
+      flex: 1,
+      minHeight: 42,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 10,
+    },
+    primaryBtn: {
+      backgroundColor: theme.colors.buttonPrimary,
+    },
+    secondaryBtn: {
+      backgroundColor: theme.colors.buttonSecondary,
+    },
+    ghostBtn: {
+      backgroundColor: theme.colors.buttonGhost,
+      borderWidth: 1,
+      borderColor: theme.colors.borderStrong,
+    },
+    actionBtnText: {
+      color: theme.colors.buttonPrimaryText,
+      fontWeight: "700",
+      fontSize: 13,
+    },
+    ghostBtnText: {
+      color: theme.colors.buttonGhostText,
+      fontWeight: "700",
+      fontSize: 13,
+    },
+    dropdownTrigger: {
+      marginTop: 10,
+      minHeight: 42,
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 10,
+      backgroundColor: theme.colors.inputBackground,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+    },
+    dropdownText: {
+      flex: 1,
+      fontSize: 13,
+      color: theme.colors.inputText,
+      marginRight: 8,
+    },
+    dropdownArrow: {
+      fontSize: 13,
+      color: theme.colors.textMuted,
+    },
+    dropdownMenu: {
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 10,
+      backgroundColor: theme.colors.surfaceElevated,
+      maxHeight: 220,
+      overflow: "hidden",
+    },
+    dropdownItem: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    dropdownItemActive: {
+      backgroundColor: theme.colors.chipActiveBackground,
+    },
+    dropdownItemTop: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      columnGap: 8,
+    },
+    dropdownItemTitle: {
+      flex: 1,
+      color: theme.colors.textPrimary,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    dropdownItemRssi: {
+      color: theme.colors.textSecondary,
+      fontSize: 11,
+    },
+    dropdownItemSub: {
+      color: theme.colors.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    settingPanel: {
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+      backgroundColor: theme.colors.surfaceAlt,
+      overflow: "hidden",
+      marginBottom: 14,
+    },
+    panelHeader: {
+      backgroundColor: theme.colors.cardHeader,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+    },
+    panelHeaderText: {
+      fontSize: 20,
+      color: theme.colors.textPrimary,
+      fontFamily: Platform.OS === "ios" ? "Times New Roman" : "serif",
+    },
+    panelBody: {
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+    },
+    infoLine: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      marginBottom: 6,
+    },
+    themeOpenBtn: {
+      marginTop: 6,
+    },
+    thresholdRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      columnGap: 12,
+    },
+    valueGroup: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 6,
+    },
+    valueLabel: {
+      fontSize: 16,
+      color: theme.colors.textPrimary,
+      minWidth: 42,
+      fontFamily: Platform.OS === "ios" ? "Times New Roman" : "serif",
+    },
+    settingInput: {
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      fontSize: 14,
+      color: theme.colors.inputText,
+      backgroundColor: theme.colors.inputBackground,
+      flex: 1,
+    },
+    setBtn: {
+      minHeight: 36,
+      minWidth: 104,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 12,
+      alignSelf: "flex-end",
+      paddingHorizontal: 16,
+    },
+    inlineSetBtn: {
+      marginTop: 0,
+      alignSelf: "auto",
+      minWidth: 82,
+    },
+    readEmailBtn: {
+      marginTop: 0,
+      marginBottom: 12,
+      alignSelf: "flex-start",
+    },
+    readEmailBtnText: {
+      color: theme.colors.buttonSecondaryText,
+      fontWeight: "700",
+      fontSize: 12,
+      letterSpacing: 0.3,
+    },
+    fieldHeading: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: theme.colors.textPrimary,
+      marginBottom: 6,
+    },
+    setBtnText: {
+      color: theme.colors.buttonPrimaryText,
+      fontWeight: "800",
+      fontSize: 13,
+      letterSpacing: 0.4,
+    },
+    multiplierRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      columnGap: 12,
+    },
+    settingInputWide: {
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      fontSize: 14,
+      color: theme.colors.inputText,
+      backgroundColor: theme.colors.inputBackground,
+      flex: 1,
+    },
+    historyText: {
+      color: theme.colors.textMuted,
+      fontSize: 12,
+      marginTop: 2,
+    },
+    telemetryText: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      lineHeight: 18,
+    },
+    telemetryList: {
+      rowGap: 2,
+    },
+    telemetryRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      paddingVertical: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    telemetryLabel: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: "600",
+      color: theme.colors.textPrimary,
+      paddingRight: 8,
+    },
+    telemetryValue: {
+      flex: 1,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: "right",
+    },
+    telemetryRaw: {
+      marginTop: 6,
+      fontSize: 11,
+      color: theme.colors.textMuted,
+    },
+    bottomNavBg: {
+      position: "absolute",
+      bottom: 0,
+      width: "100%",
+      height: 86,
+    },
+    navContainer: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-around",
+      paddingBottom: 10,
+      paddingHorizontal: 10,
+      flex: 1,
+    },
+    navItem: {
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 62,
+    },
+    navIcon: {
+      width: 24,
+      height: 24,
+      resizeMode: "contain",
+      marginBottom: 2,
+    },
+    navText: {
+      fontSize: 11,
+      color: theme.colors.textPrimary,
+      fontWeight: "700",
+    },
+  });
+}

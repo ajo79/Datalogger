@@ -10,15 +10,12 @@
  * - Standard navigation and header layout.
  */
 
-import React, { useState } from 'react';     // useEffect,
+import React, { useMemo, useState } from 'react';     // useEffect,
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Image,
-  ImageBackground,
-  TouchableOpacity,
   FlatList,
   RefreshControl,
   SafeAreaView,
@@ -26,14 +23,16 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getAlarms } from '../storage/alarmStorage';
 import { fetchDashboardData, fetchESP32Alarms } from '../api/dataService';
-import { navigateToTabRoute } from '../navigation/navHelpers';
 import { useResponsiveLayout } from '../theme/responsive';
+import { useAppTheme } from "../theme";
+import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 
 export default function AlarmScreen() {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const navigation = useNavigation();
   const ui = useResponsiveLayout();
   const screenWidth = ui.width;
-  const navigateToTab = (route) => navigateToTabRoute(navigation, route);
   const tableMinWidth = Math.max(screenWidth, 910);
   const [alarmData, setAlarmData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -266,35 +265,11 @@ export default function AlarmScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header Wave Image */}
-      <Image source={require('../../assets/images/WaveTop.png')} style={styles.headerImage} />
-
-      {/* Top Header Bar */}
-      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
-        {/* Left Sidebar Toggle */}
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Sidebar')}>
-            <Image
-              source={require('../../assets/images/MoreTop.png')}
-              style={styles.iconSmall1}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Screen Title */}
-        <Text
-          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-        >
-          ALARM
-        </Text>
-
-        {/* Right Spacer for Symmetry */}
-        <View style={styles.headerLeft} />
-      </View>
+      <ModernTopHeader
+        title="ALARM"
+        leftIcon={require("../../assets/images/MoreTop.png")}
+        onLeftPress={() => navigation.navigate("Sidebar")}
+      />
 
       {/* --- Data Table Section --- */}
       <ScrollView style={styles.tableScrollArea} horizontal>
@@ -326,264 +301,117 @@ export default function AlarmScreen() {
         </View>
       </ScrollView>
 
-      {/* --- Bottom Navigation Bar --- */}
-      <ImageBackground
-        source={require('../../assets/images/WaveBottom.png')}
-        style={styles.bottomNavBg}
-        resizeMode="stretch"
-      >
-        <View style={styles.navContainer}>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Dashboard')}>
-            <Image source={require('../../assets/images/GraphIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              DASH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Home')}>
-            <Image source={require('../../assets/images/HomeIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              HOME
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Graph')}>
-            <Image source={require('../../assets/images/GraphIcon.png')} style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              GRAPH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('Alarm')}>
-            <Image source={require('../../assets/images/AlarmIcon.png')} style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              ALARM
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab('More')}>
-            <Image source={require('../../assets/images/MoreIcon.png')} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              MORE
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernBottomNav navigation={navigation} activeRoute="Alarm" />
     </SafeAreaView>
   );
 }
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-
-  /* Header Layout */
-  headerImage: {
-    width: '100%',
-    height: 86,
-    resizeMode: 'cover',
-  },
-  topHeader: {
-    position: 'absolute',
-    top: 22,
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    zIndex: 10,
-  },
-  iconSmall1: {
-    width: 28,
-    height: 24,
-    resizeMode: 'contain',
-  },
-  headerLeft: {
-    width: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    fontSize: 25,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-    flex: 1,
-    paddingHorizontal: 8,
-  },
-
-  /* Table Layout */
-  tableScrollArea: {
-    marginBottom: 90,
-  },
-  tableContainer: {
-    paddingRight: 6, // keeps right-most column readable near edge on small screens
-  },
-  row: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
-    alignItems: 'center',
-  },
-  headerRow: {
-    backgroundColor: '#f1f1f1',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-  },
-  headerCell: {
-    fontWeight: 'bold',
-    color: '#000',
-  },
-
-  // Column Styles
-  cellSrNo: {
-    width: 60,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'center',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellDevice: {
-    width: 90,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'center',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellDeviceName: {
-    width: 130,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'left',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellMessage: {
-    width: 160, // Flexible width for longer text
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'left',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellDate: {
-    width: 150,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'center',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellStatus: {
-    width: 80,
-    padding: 4,
-    fontSize: 12,
-    textAlign: 'center',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellAckBy: {
-    width: 90,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'center',
-    borderRightWidth: 1,
-    borderColor: '#ddd',
-  },
-  cellAckDate: {
-    width: 150,
-    padding: 8,
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  emptyText: {
-    textAlign: 'center',
-    margin: 20,
-    color: '#888',
-  },
-
-
-  /* Bottom Navigation Layout */
-  bottomNavBg: {
-    position: 'absolute',
-    bottom: 0,
-    width: '100%',
-    height: 86,
-    justifyContent: 'center',
-  },
-  navContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: '100%',
-    paddingBottom: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navIcon: {
-    width: 28,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4,
-  },
-  navIcon1: {
-    width: 35,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4,
-  },
-  navIcon2: {
-    width: 25,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4,
-  },
-  navText: {
-    fontWeight: 'bold',
-    fontSize: 12,
-    color: '#000',
-    textAlign: 'center',
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    tableScrollArea: {
+      marginBottom: 108,
+    },
+    tableContainer: {
+      paddingRight: 6,
+    },
+    row: {
+      flexDirection: 'row',
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      paddingVertical: 10,
+      paddingHorizontal: 5,
+      alignItems: 'center',
+      backgroundColor: theme.colors.tableRow,
+    },
+    headerRow: {
+      backgroundColor: theme.colors.surfaceAlt,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    headerCell: {
+      fontWeight: 'bold',
+      color: theme.colors.textPrimary,
+    },
+    cellSrNo: {
+      width: 60,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'center',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellDevice: {
+      width: 90,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'center',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellDeviceName: {
+      width: 130,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'left',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellMessage: {
+      width: 160,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'left',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellDate: {
+      width: 150,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'center',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellStatus: {
+      width: 80,
+      padding: 4,
+      fontSize: 12,
+      textAlign: 'center',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellAckBy: {
+      width: 90,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'center',
+      borderRightWidth: 1,
+      borderColor: theme.colors.border,
+      color: theme.colors.textPrimary,
+    },
+    cellAckDate: {
+      width: 150,
+      padding: 8,
+      fontSize: 12,
+      textAlign: 'center',
+      color: theme.colors.textPrimary,
+    },
+    emptyText: {
+      textAlign: 'center',
+      margin: 20,
+      color: theme.colors.textMuted,
+    },
+  });
+}

@@ -15,6 +15,7 @@ export const BLE_CHAR_UUIDS = {
   param7: withSuffix("0007"),
   param8: withSuffix("0008"),
   param9: withSuffix("0009"),
+  deviceName: withSuffix("00f5"),
   deviceId: withSuffix("00f9"),
   // Factory credential writes (firmware must expose matching characteristics)
   wifiSsid: withSuffix("00fb"),

@@ -1,7 +1,9 @@
 const radius = Object.freeze({
-  sm: 10,
-  md: 14,
-  lg: 18,
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 22,
+  xl: 28,
   pill: 999,
 });
 

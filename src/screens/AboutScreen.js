@@ -9,12 +9,15 @@
  * - Navigation redirection to Auth stack.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { clearSession, clearUser } from '../storage/userStorage';
 import { logoutToAuthRoot } from '../navigation/navHelpers';
+import { useAppTheme } from '../theme';
 
 const AboutScreen = ({ navigation }) => {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   /**
    * Handles user logout.
@@ -39,29 +42,33 @@ const AboutScreen = ({ navigation }) => {
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: '#FF7F50',
-    padding: 15,
-    borderRadius: 10,
-    width: '80%',
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.canvas,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginBottom: 20,
+      color: theme.colors.textPrimary,
+    },
+    button: {
+      backgroundColor: theme.colors.buttonPrimary,
+      padding: 15,
+      borderRadius: 10,
+      width: '80%',
+      alignItems: 'center',
+    },
+    buttonText: {
+      color: theme.colors.buttonPrimaryText,
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+  });
+}
 
 export default AboutScreen;

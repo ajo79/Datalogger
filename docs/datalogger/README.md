@@ -16,9 +16,11 @@ This folder contains maintained technical documentation for the React Native `Da
    - API endpoint contract, payload schema mapping, pagination, and timestamp rules.
 6. `SCREENS_AND_NAVIGATION.md`
    - Page-wise behavior, route map, button actions, and navigation flows.
-7. `OPERATIONS_TROUBLESHOOTING.md`
+7. `FEATURE_INVENTORY.md`
+   - End-to-end inventory of implemented features across screens, BLE, API, storage, and platform integration.
+8. `OPERATIONS_TROUBLESHOOTING.md`
    - Operational runbook and troubleshooting for common production issues.
-8. `TESTING_CHECKLIST.md`
+9. `TESTING_CHECKLIST.md`
    - Functional and regression test checklist before release.
 
 ## Scope

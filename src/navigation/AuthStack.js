@@ -29,6 +29,7 @@ import HelpSupportScreen from '../screens/HelpSupportScreen';
 import ProfileScreen from "../screens/ProfileScreen";
 import SidebarScreen from "../screens/SidebarScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import ThemesScreen from "../screens/ThemesScreen";
 import FactorySettingsScreen from "../screens/FactorySettingsScreen";
 
 import TabNavigator from './TabNavigator';
@@ -39,7 +40,7 @@ export default function AuthStack() {
   return (
     <Stack.Navigator
       initialRouteName="Login" // Starts at login
-      screenOptions={{ headerShown: false }}
+      screenOptions={{ headerShown: false, animation: "fade_from_bottom", animationDuration: 180 }}
     >
       {/* Authentication */}
       <Stack.Screen name="Login" component={LoginScreen} />
@@ -60,6 +61,7 @@ export default function AuthStack() {
       <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
       <Stack.Screen name="Sidebar" component={SidebarScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Themes" component={ThemesScreen} />
       <Stack.Screen name="FactorySettings" component={FactorySettingsScreen} />
 
       {/* Device Detail Route */}

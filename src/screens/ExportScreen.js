@@ -5,14 +5,13 @@
  * The data is converted to CSV and shared via the native share sheet.
  */
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
   Image,
-  ImageBackground,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -26,6 +25,8 @@ import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { fetchAllIoTReadings } from '../api/dataService';
 import { useNavigation } from "@react-navigation/native";
+import { useAppTheme } from "../theme";
+import { ModernTopHeader } from "../components/ui";
 
 // --- Helpers reused from other screens ---
 
@@ -135,6 +136,8 @@ const getTsEpochMs = (item) => {
 };
 
 export default function ExportScreen({ navigation: navigationProp, route }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const navFromHook = useNavigation();
   const navigation = navigationProp ?? navFromHook;
   const tryParentBack = (nav) => {
@@ -413,20 +416,11 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
-      <Image source={require("../../assets/images/WaveTop.png")} style={styles.headerImage} />
-      <View style={styles.topHeader}>
-        <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Image
-            source={require("../../assets/images/BackIcon.png")}
-            style={styles.icon}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerText} numberOfLines={1} adjustsFontSizeToFit>
-          {deviceName ? `${deviceName} Export` : "Export"}
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ModernTopHeader
+        title={deviceName ? `${deviceName} Export` : "Export"}
+        leftIcon={require("../../assets/images/BackIcon.png")}
+        onLeftPress={handleBack}
+      />
 
       {/* Main Content */}
       <ScrollView contentContainerStyle={styles.content}>
@@ -478,7 +472,7 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator color="#000" />
+            <ActivityIndicator color={theme.colors.textPrimary} />
           ) : (
             <Text style={styles.downloadText}>Export Data</Text>
           )}
@@ -521,12 +515,7 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
         )}
       </ScrollView>
 
-      {/* Footer */}
-      <ImageBackground
-        source={require("../../assets/images/WaveBottom.png")}
-        style={styles.footer}
-        resizeMode="cover"
-      />
+      <View style={styles.footer} />
 
       {/* Date Picker Modal */}
       {showPicker && (
@@ -543,140 +532,112 @@ const [previewMetricLabels, setPreviewMetricLabels] = useState({});
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF"
-  },
-
-  /* Header Styles */
-  headerImage: { width: "100%", height: 86, resizeMode: "cover" },
-  topHeader: {
-    position: "absolute",
-    top: 22,
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    zIndex: 10,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerSpacer: { width: 44 },
-  icon: {
-    width: 30,
-    height: 26,
-    resizeMode: "contain"
-  },
-  headerText: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#000",
-    flex: 1
-  },
-
-  /* Content Styles */
-  content: {
-    flexGrow: 1,
-    alignItems: "center",
-    padding: 10
-  },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 15,
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  inputContainer: { marginHorizontal: 8 },
-  inputWithIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-  },
-  calendarIcon: {
-    width: 20,
-    height: 20,
-    marginLeft: 5
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 4,
-    color: "#000",
-    fontWeight: "600",
-    textAlign: "center"
-  },
-  input: {
-    borderWidth: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    width: 100,
-    fontSize: 12
-  },
-  downloadBtn: {
-    backgroundColor: "green",
-    paddingVertical: 14,
-    paddingHorizontal: 25,
-    borderRadius: 20,
-    marginTop: 30,
-  },
-  downloadText: {
-    color: "black",
-    fontWeight: "bold",
-    fontSize: 14
-  },
-  downloadBtnAlt: {
-    backgroundColor: "#f6b85c", // theme yellow
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderRadius: 20,
-    marginTop: 10,
-    alignItems: "center",
-  },
-
-  /* Preview Table */
-  tableWrapper: {
-    width: "100%",
-    marginTop: 20,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    padding: 10,
-  },
-  previewTitle: {
-    fontWeight: "700",
-    fontSize: 14,
-    color: "#111",
-    marginBottom: 8,
-  },
-  tableRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-    paddingVertical: 6,
-  },
-  tableHeader: {
-    backgroundColor: "#f7f7f7",
-  },
-  cell: {
-    paddingHorizontal: 8,
-    fontSize: 12,
-    color: "#000",
-  },
-  cellNarrow: { width: 70 },
-  cellWide: { width: 140 },
-  footer: {
-    height: 80,
-    width: "100%"
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    content: {
+      flexGrow: 1,
+      alignItems: "center",
+      padding: 10,
+      paddingBottom: 26,
+    },
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      marginBottom: 15,
+      flexWrap: "wrap",
+      justifyContent: "center",
+    },
+    inputContainer: { marginHorizontal: 8 },
+    inputWithIcon: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 2,
+      backgroundColor: theme.colors.inputBackground,
+    },
+    calendarIcon: {
+      width: 20,
+      height: 20,
+      marginLeft: 5,
+      tintColor: theme.colors.navActive,
+    },
+    label: {
+      fontSize: 14,
+      marginBottom: 4,
+      color: theme.colors.textPrimary,
+      fontWeight: "600",
+      textAlign: "center",
+    },
+    input: {
+      borderWidth: 0,
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+      width: 100,
+      fontSize: 12,
+      color: theme.colors.inputText,
+    },
+    downloadBtn: {
+      backgroundColor: theme.colors.buttonSecondary,
+      paddingVertical: 14,
+      paddingHorizontal: 25,
+      borderRadius: 20,
+      marginTop: 30,
+    },
+    downloadText: {
+      color: theme.colors.buttonSecondaryText,
+      fontWeight: "bold",
+      fontSize: 14,
+    },
+    downloadBtnAlt: {
+      backgroundColor: theme.colors.buttonPrimary,
+      paddingVertical: 12,
+      paddingHorizontal: 22,
+      borderRadius: 20,
+      marginTop: 10,
+      alignItems: "center",
+    },
+    tableWrapper: {
+      width: "100%",
+      marginTop: 20,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+      padding: 10,
+    },
+    previewTitle: {
+      fontWeight: "700",
+      fontSize: 14,
+      color: theme.colors.textPrimary,
+      marginBottom: 8,
+    },
+    tableRow: {
+      flexDirection: "row",
+      borderBottomWidth: 1,
+      borderColor: theme.colors.border,
+      paddingVertical: 6,
+      backgroundColor: theme.colors.tableRow,
+    },
+    tableHeader: {
+      backgroundColor: theme.colors.surfaceAlt,
+    },
+    cell: {
+      paddingHorizontal: 8,
+      fontSize: 12,
+      color: theme.colors.textPrimary,
+    },
+    cellNarrow: { width: 70 },
+    cellWide: { width: 140 },
+    footer: {
+      height: 22,
+      width: "100%",
+    },
+  });
+}

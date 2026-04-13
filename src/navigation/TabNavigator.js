@@ -13,6 +13,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAppTheme } from '../theme';
 
 import HomeScreen from '../screens/HomeScreen';
 import DataScreen from '../screens/DataScreen';
@@ -24,6 +25,8 @@ import DashboardScreen from '../screens/DashboardScreen';
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
+  const { theme } = useAppTheme();
+
   return (
     <Tab.Navigator
       // We hide the default tab bar to prevent double rendering.
@@ -33,8 +36,8 @@ export default function TabNavigator() {
         headerShown: false,
         // These tab bar options are technically unused since the bar is hidden,
         // but kept for reference if we ever switch back to native tabs.
-        tabBarActiveTintColor: '#F6B85C',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: theme.colors.navIndicator,
+        tabBarInactiveTintColor: theme.colors.navInactive,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 

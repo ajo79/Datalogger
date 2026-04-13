@@ -11,7 +11,7 @@
  * - Auto-navigation to Main or Auth stack based on login status.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   View,
@@ -21,11 +21,14 @@ import {
 } from 'react-native';
 import { getSession } from '../storage/userStorage';
 import { prefetchFastDeviceStatus } from '../api/dataService';
+import { useAppTheme } from "../theme";
 
 const STARTUP_PREFETCH_TIMEOUT_MS = 8000;
 const STARTUP_PREFETCH_WAIT_MS = 3000;
 
 const AnimationScreen = ({ navigation }) => {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   // --- Animation Values ---
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
@@ -180,28 +183,31 @@ const AnimationScreen = ({ navigation }) => {
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5aa3aff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  image: {
-    width: 300,
-    height: 300,
-  },
-  letterRow: {
-    flexDirection: 'row',
-    position: 'absolute',
-    top: '23%', // Adjusted position on top of shield
-  },
-  letter: {
-    fontSize: 45,
-    color: '#1E3A8A',
-    fontWeight: 'bold',
-    marginHorizontal: 3,
-  },
-});
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.accentSoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    image: {
+      width: 300,
+      height: 300,
+    },
+    letterRow: {
+      flexDirection: 'row',
+      position: 'absolute',
+      top: '23%',
+    },
+    letter: {
+      fontSize: 45,
+      color: colors.brandDark,
+      fontWeight: 'bold',
+      marginHorizontal: 3,
+    },
+  });
+}
 
 export default AnimationScreen;

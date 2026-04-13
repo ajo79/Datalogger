@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,16 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Image,
-  ImageBackground,
   ScrollView,
   Linking,
   Alert,
 } from "react-native";
+import { goBackWithFallback } from "../navigation/navHelpers";
+import { useAppTheme } from "../theme";
+import { ModernTopHeader } from "../components/ui";
 export default function HelpSupportScreen({ navigation }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const MANUAL_URL = "https://www.blackstarproducts.com";
   const WEBSITE_URL = "https://www.blackstarproducts.com";
   const SUPPORT_EMAIL = "blackstrproductcssupport@gmail.com";
@@ -31,23 +35,11 @@ export default function HelpSupportScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* ===== Header ===== */}
-      <View style={styles.header}>
-        <Image
-          source={require("../../assets/images/WaveTop.png")}
-          style={styles.headerImage}
-        />
-        <View style={styles.topHeader}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Image
-              source={require("../../assets/images/BackIcon.png")}
-              style={styles.moreIcon}
-            />
-          </TouchableOpacity>
-          <Text style={styles.headerText}>Help & Support</Text>
-          <View style={{ width: 30 }} />
-        </View>
-      </View>
+      <ModernTopHeader
+        title="Help & Support"
+        leftIcon={require("../../assets/images/BackIcon.png")}
+        onLeftPress={() => goBackWithFallback(navigation, "More")}
+      />
 
       {/* ===== Content ===== */}
       <ScrollView contentContainerStyle={styles.content}>
@@ -92,97 +84,56 @@ export default function HelpSupportScreen({ navigation }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ===== Footer ===== */}
-      <ImageBackground
-        source={require("../../assets/images/WaveBottom.png")}
-        style={styles.bottomNavBg}
-        resizeMode="stretch"
-      />
+      <View style={styles.bottomNavBg} />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    // backgroundColor: "#f8f4f0",
-    backgroundColor: '#fff',
-  },
-
-  /* ===== Header ===== */
-  header: {
-    height: 80,
-    justifyContent: "center",
-  },
-  moreIcon: {
-    width: 32,
-    height: 32,
-  },
-  headerImage: {
-    position: "absolute",
-    top: 0,
-    width: "100%",
-    height: 80,
-    resizeMode: "cover",
-  },
-  topHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    height: "100%",
-  },
-  headerText: {
-    fontSize: 25,
-    fontWeight: "bold",
-    color: "#000",
-  },
-
-  /* ===== Content ===== */
-  content: {
-    padding: 20,
-    paddingBottom: 100,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 25,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#000",
-  },
-  subTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginTop: 20,
-    marginBottom: 5,
-    color: "#000",
-  },
-  text: {
-    fontSize: 18,
-    marginBottom: 5,
-    color: "#333",
-  },
-  linkText: {
-    color: "#1f5fbf",
-    textDecorationLine: "underline",
-  },
-  downloadIcon: {
-    width: 28,
-    height: 28,
-    resizeMode: "contain",
-    // paddingRight : 190,
-  },
-
-
-  /* ===== Footer ===== */
-  bottomNavBg: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 80,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    content: {
+      padding: 20,
+      paddingBottom: 24,
+    },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 25,
+    },
+    sectionTitle: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: theme.colors.textPrimary,
+    },
+    subTitle: {
+      fontSize: 22,
+      fontWeight: "bold",
+      marginTop: 20,
+      marginBottom: 5,
+      color: theme.colors.textPrimary,
+    },
+    text: {
+      fontSize: 18,
+      marginBottom: 5,
+      color: theme.colors.textSecondary,
+    },
+    linkText: {
+      color: theme.colors.brand,
+      textDecorationLine: "underline",
+    },
+    downloadIcon: {
+      width: 28,
+      height: 28,
+      resizeMode: "contain",
+      tintColor: theme.colors.navActive,
+    },
+    bottomNavBg: {
+      height: 20,
+    },
+  });
+}

@@ -11,17 +11,20 @@
  * - Card-based layout for cabin data.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { hexWithAlpha, useAppTheme } from "../theme";
+import { AnimatedPressable } from "../components/ui";
 
 export default function DeviceInformationScreen() {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   // Mock data for cabins
   const cabinData = [
     { id: 1, temperature: 28, humidity: 25 },
@@ -52,13 +55,12 @@ export default function DeviceInformationScreen() {
       {/* Tab Navigation Bar */}
       <View style={styles.tabsContainer}>
         {tabs.map(tab => (
-          <TouchableOpacity
+          <AnimatedPressable
             key={tab.id}
             style={[
               styles.tabButton,
               tab.id === selectedTab && styles.tabButtonActive,
             ]}
-            activeOpacity={0.7}
             onPress={() => setSelectedTab(tab.id)}
           >
             <Text
@@ -69,7 +71,7 @@ export default function DeviceInformationScreen() {
             >
               {tab.label}
             </Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         ))}
       </View>
 
@@ -98,10 +100,12 @@ export default function DeviceInformationScreen() {
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFD18D', // Warm background color
+    backgroundColor: colors.canvas,
   },
 
   /* Header Styles */
@@ -110,18 +114,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomColor: 'rgba(255,255,255,0.4)',
     borderBottomWidth: 1,
-    backgroundColor: '#FFA726',
+    backgroundColor: colors.brand,
   },
   headerTitle: {
     fontSize: 18,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
 
   /* Tab Bar Styles */
   tabsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#FFB74D',
+    backgroundColor: hexWithAlpha(colors.brand, 0.9),
     justifyContent: 'space-around',
     paddingVertical: 8,
   },
@@ -132,16 +136,17 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   tabButtonActive: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: colors.accentSoft,
     opacity: 1,
   },
   tabButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 13,
     fontWeight: '500',
   },
   tabButtonTextActive: {
     fontWeight: '700',
+    color: colors.brandDark,
   },
 
   /* Content Styles */
@@ -151,12 +156,14 @@ const styles = StyleSheet.create({
   },
   cabinCard: {
     width: '90%',
-    backgroundColor: '#FFAB40',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: hexWithAlpha(colors.brand, 0.2),
     padding: 14,
     borderRadius: 8,
     marginBottom: 12,
     // Shadows
-    shadowColor: '#FFA726',
+    shadowColor: colors.brand,
     shadowOpacity: 0.5,
     shadowRadius: 6,
     elevation: 3,
@@ -165,12 +172,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#FFF8E1',
+    color: colors.textSecondary,
   },
   cabinText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFF8E1',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   value: {
@@ -181,13 +188,14 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: 'center',
     paddingVertical: 14,
-    backgroundColor: '#FFA726',
+    backgroundColor: colors.brand,
     borderTopColor: 'rgba(255,255,255,0.4)',
     borderTopWidth: 1,
   },
   footerText: {
     fontSize: 14,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
-});
+  });
+}

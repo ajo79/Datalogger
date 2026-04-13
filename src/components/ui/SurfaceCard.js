@@ -1,28 +1,6 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, StyleSheet } from "react-native";
-import colors from "../../theme/colors";
-import spacing from "../../theme/spacing";
-import radius from "../../theme/radius";
-import shadows from "../../theme/shadows";
-
-const VARIANT_STYLES = StyleSheet.create({
-  default: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-  },
-  muted: {
-    backgroundColor: colors.surfaceAlt,
-    borderColor: colors.border,
-  },
-  outlined: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-  },
-  danger: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#FCA5A5",
-  },
-});
+import { useAppTheme, hexWithAlpha } from "../../theme";
 
 export default function SurfaceCard({
   children,
@@ -31,14 +9,37 @@ export default function SurfaceCard({
   elevated = false,
   style,
 }) {
-  const variantStyle = VARIANT_STYLES[variant] || VARIANT_STYLES.default;
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const variantStyles = useMemo(
+    () => ({
+      default: {
+        backgroundColor: theme.colors.cardBackground,
+        borderColor: theme.colors.cardBorder,
+      },
+      muted: {
+        backgroundColor: theme.colors.surfaceAlt,
+        borderColor: theme.colors.border,
+      },
+      outlined: {
+        backgroundColor: theme.colors.surface,
+        borderColor: theme.colors.borderStrong,
+      },
+      danger: {
+        backgroundColor: hexWithAlpha(theme.colors.danger, 0.1),
+        borderColor: hexWithAlpha(theme.colors.danger, 0.45),
+      },
+    }),
+    [theme.colors]
+  );
+  const variantStyle = variantStyles[variant] || variantStyles.default;
   return (
     <View
       style={[
         styles.base,
         variantStyle,
         padded && styles.padded,
-        elevated ? shadows.raised : shadows.card,
+        elevated ? theme.shadows.raised : theme.shadows.card,
         style,
       ]}
     >
@@ -47,12 +48,14 @@ export default function SurfaceCard({
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-  },
-  padded: {
-    padding: spacing.md,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    base: {
+      borderWidth: 1,
+      borderRadius: theme.radius.md,
+    },
+    padded: {
+      padding: theme.spacing.md,
+    },
+  });
+}

@@ -10,7 +10,6 @@ import {
   RefreshControl,
   Share,
   Alert,
-  ImageBackground,
   TouchableOpacity,
   SafeAreaView,
 } from "react-native";
@@ -18,8 +17,9 @@ import { useNavigation } from "@react-navigation/native";
 import { fetchFastDeviceStatus, getCachedFastDeviceStatus } from "../api/dataService";
 import { classifyDeviceHealth, buildHealthSummary } from "../utils/deviceHealth";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { navigateToTabRoute } from "../navigation/navHelpers";
 import { useResponsiveLayout } from "../theme/responsive";
+import { useAppTheme } from "../theme";
+import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 
 /* ------------------------- CONFIG / THRESHOLDS ------------------------- */
 
@@ -203,21 +203,21 @@ function buildMetrics(item, envValues) {
 }
 
 // Determine status color/label for Home cards (no alarm styling)
-function computeStatusInfo(item) {
+function computeStatusInfo(item, palette) {
   const { category, online, commonIssue } = classifyDeviceHealth(item);
   if (!online) {
-    return { color: "#95A5A6", label: "Offline", online };
+    return { color: palette.statusOffline, label: "Offline", online };
   }
   if (commonIssue || category === "issue") {
-    return { color: "#e74c3c", label: "Alarm", online, category };
+    return { color: palette.statusAlarm, label: "Alarm", online, category };
   }
-  return { color: "#2ECC71", label: "Online", online, category };
+  return { color: palette.statusOnline, label: "Online", online, category };
 }
 
 // Map wifi strength (1-4) to icon + label for the card
-function getWifiInfo(item, { online = true } = {}) {
+function getWifiInfo(item, { online = true } = {}, palette) {
   if (!online) {
-    return { label: "Offline", icon: "wifi-off", color: "#7f8c8d" };
+    return { label: "Offline", icon: "wifi-off", color: palette.wifiUnknown };
   }
 
   const strength = Number(
@@ -227,26 +227,41 @@ function getWifiInfo(item, { online = true } = {}) {
   );
 
   const map = {
-    1: { label: "Very poor (1/4)", icon: "wifi-strength-1", color: "#d32f2f" }, // red
-    2: { label: "Weak (2/4)", icon: "wifi-strength-2", color: "#f4511e" }, // deep orange
-    3: { label: "Good (3/4)", icon: "wifi-strength-3", color: "#42a5f5" }, // blue for contrast
-    4: { label: "Excellent (4/4)", icon: "wifi-strength-4", color: "#2e7d32" }, // green
+    1: { label: "Very poor (1/4)", icon: "wifi-strength-1", color: palette.wifiPoor },
+    2: { label: "Weak (2/4)", icon: "wifi-strength-2", color: palette.wifiWeak },
+    3: { label: "Good (3/4)", icon: "wifi-strength-3", color: palette.wifiGood },
+    4: { label: "Excellent (4/4)", icon: "wifi-strength-4", color: palette.wifiExcellent },
   };
 
   if (!Number.isFinite(strength)) {
-    return { label: "Unknown", icon: "wifi-strength-off-outline", color: "#7f8c8d" };
+    return { label: "Unknown", icon: "wifi-strength-off-outline", color: palette.wifiUnknown };
   }
 
-  return map[strength] || { label: `Level ${strength}`, icon: "wifi-strength-1", color: "#2980b9" };
+  return map[strength] || { label: `Level ${strength}`, icon: "wifi-strength-1", color: palette.wifiFallback };
 }
 
 /* ------------------------- MAIN COMPONENT ------------------------- */
 
 export default function HomeScreen(props) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const navFromHook = useNavigation();
   const navigation = props?.navigation ?? navFromHook;
   const ui = useResponsiveLayout();
-  const navigateToTab = (route) => navigateToTabRoute(navigation, route);
+  const palette = useMemo(
+    () => ({
+      statusOffline: theme.colors.textMuted,
+      statusAlarm: theme.colors.danger,
+      statusOnline: theme.colors.success,
+      wifiPoor: theme.colors.danger,
+      wifiWeak: theme.colors.warning,
+      wifiGood: theme.colors.info,
+      wifiExcellent: theme.colors.success,
+      wifiUnknown: theme.colors.textMuted,
+      wifiFallback: theme.colors.brand,
+    }),
+    [theme.colors]
+  );
   const refreshLabel = AUTO_REFRESH_MS > 0 ? `${Math.round(AUTO_REFRESH_MS / 1000)}s auto-refresh` : "Manual refresh";
 
   // --- State Variables ---
@@ -465,8 +480,8 @@ export default function HomeScreen(props) {
   const renderCabinCard = ({ item }) => {
     const envValues = getEnvValues(item);
     const metricsInfo = buildMetrics(item, envValues);
-    const { color: dotColor, label: statusLabel, online } = computeStatusInfo(item);
-    const wifi = getWifiInfo(item, { online });
+    const { color: dotColor, label: statusLabel, online } = computeStatusInfo(item, palette);
+    const wifi = getWifiInfo(item, { online }, palette);
 
     return (
       <View style={[styles.cabinBox, ui.isVeryCompact && styles.cabinBoxCompact]}>
@@ -563,40 +578,15 @@ export default function HomeScreen(props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* -------- Header Section -------- */}
-      <Image source={require("../../assets/images/WaveTop.png")} style={styles.headerImage} />
-
-      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
-        {/* Left Icon (Sidebar Trigger) */}
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={styles.headerIconBtn}
-            onPress={() => {
-              if (navigation?.openDrawer) navigation.openDrawer();
-              else navigation.navigate("Sidebar");
-            }}
-          >
-            <Image
-              source={require("../../assets/images/MoreTop.png")}
-              style={styles.navIconmore}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Center Title */}
-        <Text
-          style={[styles.headerText, { fontSize: ui.font(26, { min: 21, max: 27 }) }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-        >
-          BIOT
-        </Text>
-
-        {/* Right Placeholder for balancing layout */}
-        <View style={styles.headerRightPlaceholder} />
-      </View>
+      <ModernTopHeader
+        title="BIOT"
+        subtitle={`${summary.online}/${summary.total} online`}
+        leftIcon={require("../../assets/images/MoreTop.png")}
+        onLeftPress={() => {
+          if (navigation?.openDrawer) navigation.openDrawer();
+          else navigation.navigate("Sidebar");
+        }}
+      />
 
       {/* -------- Main Content -------- */}
       <View style={[styles.filterRow, ui.isCompact && styles.filterRowCompact]}>
@@ -674,317 +664,174 @@ export default function HomeScreen(props) {
         />
       )}
 
-      {/* -------- Bottom Navigation -------- */}
-      <ImageBackground
-        source={require("../../assets/images/WaveBottom.png")}
-        style={styles.bottomNavBg}
-        resizeMode="stretch"
-      >
-        <View style={styles.navContainer}>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Dashboard")}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={require("../../assets/images/GraphIcon.png")}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              DASH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Home")}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={require("../../assets/images/HomeIcon.png")}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              HOME
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Graph")}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={require("../../assets/images/GraphIcon.png")}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              GRAPH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Alarm")}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={require("../../assets/images/AlarmIcon.png")}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              ALARM
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("More")}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={require("../../assets/images/MoreIcon.png")}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              MORE
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernBottomNav navigation={navigation} activeRoute="Home" />
     </SafeAreaView>
   );
 }
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
-
-  /* Header Layout */
-  headerImage: { width: "100%", height: 86, resizeMode: "cover" },
-  topHeader: {
-    position: "absolute",
-    top: 22,
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between", // Distribute Left, Center, Right
-    paddingHorizontal: 14,
-    zIndex: 10,
-  },
-  headerLeft: { width: 50 }, // Fixed width for left placeholder
-  headerIconBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  navIconmore: { width: 28, height: 24, resizeMode: "contain" },
-  headerText: { fontSize: 26, fontWeight: "bold", color: "#000", textAlign: "center", flex: 1 },
-  headerRightPlaceholder: { width: 50 }, // Symmetrical fixed width for right
-
-  /* Filter Pills */
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  filterRowCompact: {
-    flexDirection: "column",
-    alignItems: "stretch",
-  },
-  filterInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  filterTitle: { fontSize: 18, fontWeight: "700", color: "#000" },
-  filterSubtitle: { fontSize: 12, color: "#666", marginTop: 2 },
-  filterChips: { flexDirection: "row", alignItems: "center" },
-  filterChipsCompact: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-    marginLeft: -6,
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    marginLeft: 6,
-    backgroundColor: "#f7f7f7",
-  },
-  chipCompact: {
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  chipActive: { borderColor: "#f6b85c", backgroundColor: "#ffe9c2" },
-  chipText: { fontSize: 12, fontWeight: "600", color: "#444" },
-  chipTextActive: { color: "#c47b1a" },
-
-  /* Cabin Card Styles */
-  cabinBox: {
-    marginHorizontal: 12,
-    marginTop: 14,
-    padding: 10,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#1f1f1f",
-    elevation: 2, // Shadow for Android
-  },
-  cabinBoxCompact: {
-    marginHorizontal: 10,
-    paddingHorizontal: 9,
-  },
-  cabinHeader: {
-    flexDirection: "row",
-    backgroundColor: "#ffcc80",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  cabinHeaderCompact: {
-    alignItems: "flex-start",
-  },
-  cabinHeaderLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    minWidth: 0,
-    marginRight: 8,
-  },
-  cabinHeaderLeftCompact: {
-    width: "100%",
-    marginRight: 0,
-  },
-  cabinName: {
-    fontWeight: "bold",
-    fontSize: 16,
-    color: "#000",
-    marginRight: 8,
-    flexShrink: 1,
-  },
-  cabinID: {
-    fontWeight: "bold",
-    fontSize: 16,
-    color: "#000",
-    flexShrink: 1,
-  },
-
-  row: { flexDirection: "row", alignItems: "center", marginTop: 10 },
-  label: { width: "35%", fontWeight: "bold", fontSize: 14, color: "#000" },
-
-  valueText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#000",
-    textAlign: "left",
-  },
-  valueWithBadge: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  wifiHeaderIcon: { marginRight: 8 },
-  badge: {
-    marginLeft: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  badgeAlarm: {
-    backgroundColor: "#f8d7da",
-    color: "#c0392b",
-  },
-  badgeOk: {
-    backgroundColor: "#d4edda",
-    color: "#1e8449",
-  },
-
-  /* Status Indicator */
-  statusWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: 6,
-    justifyContent: "flex-end", // Align to right
-    flexShrink: 0,
-  },
-  statusWrapCompact: {
-    marginTop: 6,
-    alignSelf: "flex-end",
-  },
-  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: "#111" },
-  statusText: { marginLeft: 6, fontWeight: "bold", color: "#000" },
-
-  /* Action Buttons */
-  actionsRow: { marginTop: 6 },
-  labelPlaceholder: { width: "35%" },
-  actions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", flex: 1 },
-  actionIconBtn: { alignItems: "center", justifyContent: "center", marginLeft: 10, width: 28 },
-  icon: { width: 22, height: 26, resizeMode: "contain" },
-  icongraph: { width: 26, height: 22, resizeMode: "contain" },
-
-  /* Bottom Navigation Bar */
-  bottomNavBg: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 86,
-    justifyContent: "center",
-  },
-  navContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "flex-end",
-    height: "100%",
-    paddingBottom: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  listContent: {
-    paddingBottom: 130,
-  },
-  flexOne: {
-    flex: 1,
-  },
-  navIcon: { width: 30, height: 32, resizeMode: "contain", marginBottom: 4 },
-  navText: { fontWeight: "800", fontSize: 12, color: "#000", textAlign: "center" },
-
-  /* Loading & Error States */
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
-  muted: { color: "#888", fontSize: 14, marginTop: 8 },
-  error: { color: "red", fontSize: 14, textAlign: "center", marginBottom: 12 },
-  retryBtn: { padding: 8, backgroundColor: "#ddd", borderRadius: 4 },
-  retryText: { color: "#000" },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: theme.colors.canvas },
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    filterRowCompact: {
+      flexDirection: "column",
+      alignItems: "stretch",
+    },
+    filterInfo: {
+      flex: 1,
+      minWidth: 0,
+    },
+    filterTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.textPrimary },
+    filterSubtitle: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+    filterChips: { flexDirection: "row", alignItems: "center" },
+    filterChipsCompact: {
+      marginTop: 8,
+      alignSelf: "flex-start",
+      marginLeft: -6,
+    },
+    chip: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginLeft: 6,
+      backgroundColor: theme.colors.chipBackground,
+    },
+    chipCompact: {
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+    },
+    chipActive: { borderColor: theme.colors.brand, backgroundColor: theme.colors.chipActiveBackground },
+    chipText: { fontSize: 12, fontWeight: "600", color: theme.colors.chipText },
+    chipTextActive: { color: theme.colors.chipActiveText },
+    cabinBox: {
+      marginHorizontal: 12,
+      marginTop: 14,
+      padding: 10,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+      elevation: 2,
+      shadowColor: theme.colors.overlaySoft,
+      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 5,
+    },
+    cabinBoxCompact: {
+      marginHorizontal: 10,
+      paddingHorizontal: 9,
+    },
+    cabinHeader: {
+      flexDirection: "row",
+      backgroundColor: theme.colors.cardHeader,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    cabinHeaderCompact: {
+      alignItems: "flex-start",
+    },
+    cabinHeaderLeft: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      minWidth: 0,
+      marginRight: 8,
+    },
+    cabinHeaderLeftCompact: {
+      width: "100%",
+      marginRight: 0,
+    },
+    cabinName: {
+      fontWeight: "bold",
+      fontSize: 16,
+      color: theme.colors.textPrimary,
+      marginRight: 8,
+      flexShrink: 1,
+    },
+    cabinID: {
+      fontWeight: "bold",
+      fontSize: 16,
+      color: theme.colors.textPrimary,
+      flexShrink: 1,
+    },
+    row: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+    label: { width: "35%", fontWeight: "bold", fontSize: 14, color: theme.colors.textPrimary },
+    valueText: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: "bold",
+      color: theme.colors.textPrimary,
+      textAlign: "left",
+    },
+    valueWithBadge: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    wifiHeaderIcon: { marginRight: 8 },
+    badge: {
+      marginLeft: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      fontSize: 12,
+      fontWeight: "bold",
+    },
+    badgeAlarm: {
+      backgroundColor: theme.colors.accentSoft,
+      color: theme.colors.danger,
+    },
+    badgeOk: {
+      backgroundColor: theme.colors.brandSoft,
+      color: theme.colors.success,
+    },
+    statusWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginLeft: 6,
+      justifyContent: "flex-end",
+      flexShrink: 0,
+    },
+    statusWrapCompact: {
+      marginTop: 6,
+      alignSelf: "flex-end",
+    },
+    dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.borderStrong },
+    statusText: { marginLeft: 6, fontWeight: "bold", color: theme.colors.textPrimary },
+    actionsRow: { marginTop: 6 },
+    labelPlaceholder: { width: "35%" },
+    actions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", flex: 1 },
+    actionIconBtn: { alignItems: "center", justifyContent: "center", marginLeft: 10, width: 28 },
+    icon: { width: 22, height: 26, resizeMode: "contain", tintColor: theme.colors.navActive },
+    icongraph: { width: 26, height: 22, resizeMode: "contain", tintColor: theme.colors.navActive },
+    listContent: {
+      paddingBottom: 116,
+    },
+    flexOne: {
+      flex: 1,
+    },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
+    muted: { color: theme.colors.textMuted, fontSize: 14, marginTop: 8 },
+    error: { color: theme.colors.danger, fontSize: 14, textAlign: "center", marginBottom: 12 },
+    retryBtn: {
+      padding: 8,
+      backgroundColor: theme.colors.buttonGhost,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    retryText: { color: theme.colors.buttonGhostText },
+  });
+}

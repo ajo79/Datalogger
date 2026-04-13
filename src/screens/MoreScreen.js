@@ -10,14 +10,12 @@
  * - Logout confirmation logic with app exit.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
-  View,
   Text,
   ScrollView,
   TouchableOpacity,
   Image,
-  ImageBackground,
   StyleSheet,
   Alert,
   SafeAreaView,
@@ -25,10 +23,14 @@ import {
 
 import IMAGES from "../constants/images";
 import { clearSession } from '../storage/userStorage';
-import { logoutToAuthRoot, navigateToTabRoute } from '../navigation/navHelpers';
+import { logoutToAuthRoot } from '../navigation/navHelpers';
 import { useResponsiveLayout } from '../theme/responsive';
+import { useAppTheme } from "../theme";
+import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 
 export default function MoreScreen({ navigation }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const ui = useResponsiveLayout();
   const isNarrow = ui.isCompact;
 
@@ -37,7 +39,6 @@ export default function MoreScreen({ navigation }) {
     logoutToAuthRoot(navigation);
   };
 
-  const navigateToTab = (route) => navigateToTabRoute(navigation, route);
   // Menu Configuration
   const menuItems = [
     { id: 1, title: "Profile", icon: IMAGES.ProfilePic, type: "image" },
@@ -101,31 +102,11 @@ export default function MoreScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top Header */}
-      <Image source={IMAGES.WaveTop} style={styles.headerImage} />
-
-      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
-        {/* Left Sidebar Button */}
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Sidebar')}>
-            <Image source={IMAGES.MoreTop} style={styles.iconSmall1} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Screen Title */}
-        <Text
-          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-        >
-          MORE
-        </Text>
-
-        {/* Right Spacer */}
-        <View style={styles.headerLeft} />
-      </View>
+      <ModernTopHeader
+        title="MORE"
+        leftIcon={IMAGES.MoreTop}
+        onLeftPress={() => navigation.navigate('Sidebar')}
+      />
 
       {/* Menu Items List */}
       <ScrollView contentContainerStyle={[styles.container, isNarrow && styles.containerNarrow]}>
@@ -154,207 +135,60 @@ export default function MoreScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* Bottom Navigation Bar */}
-        <ImageBackground source={IMAGES.WaveBottom} style={styles.bottomNavBg} resizeMode="stretch">
-          <View style={styles.navContainer}>
-            <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Dashboard")}>
-              <Image source={IMAGES.GraphIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-              <Text
-                style={[styles.navText, { fontSize: ui.navTextSize }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-              >
-                DASH
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Home")}>
-              <Image source={IMAGES.HomeIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-              <Text
-                style={[styles.navText, { fontSize: ui.navTextSize }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-              >
-                HOME
-              </Text>
-            </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Graph")}>
-            <Image source={IMAGES.GraphIcon} style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              GRAPH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("Alarm")}>
-            <Image source={IMAGES.AlarmIcon} style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              ALARM
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={() => navigateToTab("More")}>
-            <Image source={IMAGES.MoreIcon} style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]} />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              MORE
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernBottomNav navigation={navigation} activeRoute="More" />
     </SafeAreaView>
   );
 }
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff'
-  },
-
-  /* Header Layout */
-  headerImage: {
-    width: '100%',
-    height: 86,
-    resizeMode: 'cover'
-  },
-  topHeader: {
-    position: 'absolute',
-    top: 22,
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    zIndex: 10
-  },
-  iconSmall1: {
-    width: 28,
-    height: 24,
-    resizeMode: 'contain',
-  },
-  headerLeft: {
-    width: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    fontSize: 25,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-    flex: 1,
-    paddingHorizontal: 8,
-  },
-
-  /* Menu List */
-  container: {
-    padding: 20,
-    paddingBottom: 120 // Space for bottom nav
-  },
-  containerNarrow: {
-    paddingHorizontal: 12,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 15,
-    marginBottom: 12,
-    borderRadius: 10,
-    // Shadows
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    minHeight: 56,
-  },
-  menuItemNarrow: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  customIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 15,
-    resizeMode: "contain"
-  },
-  menuText: {
-    fontSize: 18,
-    color: "#333",
-    flex: 1,
-    minWidth: 0,
-  },
-  menuTextNarrow: {
-    fontSize: 16,
-  },
-
-  /* Bottom Navigation */
-  bottomNavBg: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 86,
-    justifyContent: "center",
-  },
-  navContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: '100%',
-    paddingBottom: 10
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  navIcon: {
-    width: 28,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4
-  },
-  navIcon1: {
-    width: 35,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4
-  },
-  navIcon2: {
-    width: 25,
-    height: 30,
-    resizeMode: 'contain',
-    marginBottom: 4
-  },
-  navText: {
-    fontWeight: 'bold',
-    fontSize: 12,
-    color: '#000',
-    textAlign: 'center'
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    container: {
+      padding: 20,
+      paddingBottom: 116,
+    },
+    containerNarrow: {
+      paddingHorizontal: 12,
+    },
+    menuItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.cardBackground,
+      borderColor: theme.colors.cardBorder,
+      borderWidth: 1,
+      padding: 15,
+      marginBottom: 12,
+      borderRadius: 10,
+      shadowColor: theme.colors.overlaySoft,
+      shadowOpacity: 0.1,
+      shadowRadius: 5,
+      elevation: 3,
+      minHeight: 56,
+    },
+    menuItemNarrow: {
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+    customIcon: {
+      width: 24,
+      height: 24,
+      marginRight: 15,
+      resizeMode: "contain",
+      tintColor: theme.colors.navActive,
+    },
+    menuText: {
+      fontSize: 18,
+      color: theme.colors.textPrimary,
+      flex: 1,
+      minWidth: 0,
+    },
+    menuTextNarrow: {
+      fontSize: 16,
+    },
+  });
+}

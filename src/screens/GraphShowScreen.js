@@ -10,7 +10,7 @@
  * - Custom Legend for chart series.
  */
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import {
   Dimensions,
   SafeAreaView,
   Image,
-  ImageBackground,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -29,6 +28,8 @@ import { LineChart } from "react-native-chart-kit";
 import { fetchAllIoTReadings, fetchRealTimeDataMonitor } from '../api/dataService';
 import { useNavigation } from "@react-navigation/native";
 import { computeIsOnline } from "../utils/deviceHealth";
+import { hexWithAlpha, useAppTheme } from "../theme";
+import { ModernTopHeader } from "../components/ui";
 
 const screenWidth = Dimensions.get("window").width;
 const LIVE_POLL_MS = 5000;
@@ -49,6 +50,8 @@ const EMPTY_GRAPH_DATA = {
 };
 
 export default function GraphShowScreen({ route, navigation: navigationProp }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const navFromHook = useNavigation();
   const navigation = navigationProp ?? navFromHook;
 
@@ -599,20 +602,11 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <Image source={require("../../assets/images/WaveTop.png")} style={styles.headerImage} />
-      <View style={styles.topHeader}>
-        <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Image
-            source={require("../../assets/images/BackIcon.png")}
-            style={styles.icon}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerText} numberOfLines={1} adjustsFontSizeToFit>
-          {route.params?.deviceName || deviceId}
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ModernTopHeader
+        title={route.params?.deviceName || deviceId}
+        leftIcon={require("../../assets/images/BackIcon.png")}
+        onLeftPress={handleBack}
+      />
 
       {/* Main Content */}
       <ScrollView contentContainerStyle={styles.content}>
@@ -731,11 +725,11 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
             ) : (
               <>
                 <View style={styles.legendItem}>
-                  <View style={[styles.dot, { backgroundColor: "orange" }]} />
+                  <View style={[styles.dot, { backgroundColor: theme.colors.warning }]} />
                   <Text style={styles.legendText}>Temp</Text>
                 </View>
                 <View style={styles.legendItem}>
-                  <View style={[styles.dot, { backgroundColor: "blue" }]} />
+                  <View style={[styles.dot, { backgroundColor: theme.colors.info }]} />
                   <Text style={styles.legendText}>Humidity</Text>
                 </View>
               </>
@@ -744,7 +738,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
           {/* Loading Indicator */}
           {isLoading ? (
-            <ActivityIndicator size="large" color="#0000ff" style={{ marginVertical: 20 }} />
+            <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginVertical: 20 }} />
           ) : (
             <>
               <ScrollView
@@ -766,16 +760,16 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
                     yAxisSuffix=""
                     fromZero
                     chartConfig={{
-                      backgroundColor: "#fff",
-                      backgroundGradientFrom: "#fff",
-                      backgroundGradientTo: "#fff",
+                      backgroundColor: theme.colors.surfaceElevated,
+                      backgroundGradientFrom: theme.colors.surfaceElevated,
+                      backgroundGradientTo: theme.colors.surfaceElevated,
                       decimalPlaces: 1,
-                      color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                      labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                      color: (opacity = 1) => hexWithAlpha(theme.colors.textPrimary, opacity),
+                      labelColor: (opacity = 1) => hexWithAlpha(theme.colors.textPrimary, opacity),
                       propsForDots: {
                         r: "4",
                         strokeWidth: "2",
-                        stroke: "#ffa726",
+                        stroke: theme.colors.accent,
                       },
                     }}
                     onDataPointClick={(point) => {
@@ -877,12 +871,7 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Footer */}
-      <ImageBackground
-        source={require("../../assets/images/WaveBottom.png")}
-        style={styles.footer}
-        resizeMode="cover"
-      />
+      <View style={styles.footer} />
 
       {/* Date Picker Modal */}
       {showPicker && (
@@ -899,267 +888,237 @@ export default function GraphShowScreen({ route, navigation: navigationProp }) {
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF"
-  },
-
-  /* Header Styles */
-  headerImage: { width: "100%", height: 86, resizeMode: "cover" },
-  topHeader: {
-    position: "absolute",
-    top: 22,
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    zIndex: 10,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerSpacer: { width: 44 },
-  icon: {
-    width: 28,
-    height: 24,
-    resizeMode: "contain"
-  },
-  headerText: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#000",
-    flex: 1
-  },
-
-  /* Content Styles */
-  content: {
-    flexGrow: 1,
-    alignItems: "center",
-    padding: 10,
-    paddingBottom: 100, // Clear footer
-  },
-  modeSwitchRow: {
-    flexDirection: "row",
-    marginBottom: 12,
-    alignSelf: "center",
-  },
-  modeBtn: {
-    borderWidth: 1,
-    borderColor: "#d5d9e0",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    marginHorizontal: 4,
-    backgroundColor: "#fff",
-  },
-  modeBtnActive: {
-    backgroundColor: "#0b5fff",
-    borderColor: "#0b5fff",
-  },
-  modeBtnText: {
-    color: "#1e293b",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  modeBtnTextActive: {
-    color: "#fff",
-  },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 15,
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  inputContainer: { marginHorizontal: 8 },
-  inputWithIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  calendarIcon: {
-    width: 20,
-    height: 20,
-    marginLeft: 5
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 4,
-    color: "#000",
-    fontWeight: "600"
-  },
-  input: {
-    borderWidth: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    width: 100,
-    fontSize: 12
-  },
-  filterBtn: {
-    backgroundColor: "#f5a623",
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    borderRadius: 5,
-    marginLeft: 8,
-    marginTop: 18,
-  },
-  filterText: {
-    color: "black",
-    fontWeight: "bold",
-    fontSize: 14
-  },
-  pagerRow: {
-    marginTop: -4,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  pagerBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#e3e3e3",
-  },
-  pagerBtnDisabled: {
-    opacity: 0.5,
-  },
-  pagerText: {
-    color: "#000",
-    fontWeight: "600",
-  },
-  pagerLabel: {
-    color: "#444",
-    fontSize: 12,
-    paddingHorizontal: 6,
-  },
-
-  /* Graph Styles */
-  graphContainer: {
-    alignItems: "center",
-    marginTop: 10,
-    width: "100%",
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 8,
-    textAlign: "center"
-  },
-  liveNotice: {
-    fontSize: 12,
-    color: "#334155",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  legend: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginBottom: 5
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 20
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 5
-  },
-  legendText: {
-    fontSize: 12,
-    color: "#000"
-  },
-  chartScroll: {
-    paddingRight: 12,
-  },
-  chartCanvas: {
-    position: "relative",
-  },
-  chartTooltip: {
-    position: "absolute",
-    width: TOOLTIP_WIDTH,
-    backgroundColor: "rgba(15, 23, 42, 0.92)",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  chartTooltipTitle: {
-    color: "#f8fafc",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  chartTooltipTime: {
-    color: "#cbd5e1",
-    fontSize: 10,
-    marginTop: 2,
-  },
-  scrollControls: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    width: "100%",
-    marginTop: 4,
-    marginBottom: 6,
-    paddingRight: 10,
-  },
-  scrollBtn: {
-    backgroundColor: "#e2e8f0",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginLeft: 8,
-  },
-  scrollBtnDisabled: {
-    opacity: 0.5,
-  },
-  scrollBtnText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  xLabel: {
-    marginTop: 2,
-    fontSize: 12,
-    color: "#000",
-    fontWeight: "bold"
-  },
-  yLabel: {
-    position: "absolute",
-    left: -15,
-    top: 150,
-    transform: [{ rotate: "-90deg" }],
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  downloadBtn: {
-    backgroundColor: "#f6b85c", // theme yellow
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    marginTop: 15,
-  },
-  downloadText: {
-    color: "#000",
-    fontWeight: "bold",
-    fontSize: 14
-  },
-
-  /* Footer Styles */
-  footer: {
-    height: 80,
-    width: "100%"
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    content: {
+      flexGrow: 1,
+      alignItems: "center",
+      padding: 10,
+      paddingBottom: 26,
+    },
+    modeSwitchRow: {
+      flexDirection: "row",
+      marginBottom: 12,
+      alignSelf: "center",
+    },
+    modeBtn: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      marginHorizontal: 4,
+      backgroundColor: theme.colors.surfaceElevated,
+    },
+    modeBtnActive: {
+      backgroundColor: theme.colors.brand,
+      borderColor: theme.colors.brand,
+    },
+    modeBtnText: {
+      color: theme.colors.textSecondary,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    modeBtnTextActive: {
+      color: theme.colors.textInverse,
+    },
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      marginBottom: 15,
+      flexWrap: "wrap",
+      justifyContent: "center",
+    },
+    inputContainer: { marginHorizontal: 8 },
+    inputWithIcon: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 5,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      backgroundColor: theme.colors.inputBackground,
+    },
+    calendarIcon: {
+      width: 20,
+      height: 20,
+      marginLeft: 5,
+      tintColor: theme.colors.navActive,
+    },
+    label: {
+      fontSize: 14,
+      marginBottom: 4,
+      color: theme.colors.textPrimary,
+      fontWeight: "600",
+    },
+    input: {
+      borderWidth: 0,
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+      width: 100,
+      fontSize: 12,
+      color: theme.colors.inputText,
+    },
+    filterBtn: {
+      backgroundColor: theme.colors.buttonPrimary,
+      paddingHorizontal: 20,
+      paddingVertical: 6,
+      borderRadius: 5,
+      marginLeft: 8,
+      marginTop: 18,
+    },
+    filterText: {
+      color: theme.colors.buttonPrimaryText,
+      fontWeight: "bold",
+      fontSize: 14,
+    },
+    pagerRow: {
+      marginTop: -4,
+      marginBottom: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    pagerBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      backgroundColor: theme.colors.buttonGhost,
+    },
+    pagerBtnDisabled: {
+      opacity: 0.5,
+    },
+    pagerText: {
+      color: theme.colors.buttonGhostText,
+      fontWeight: "600",
+    },
+    pagerLabel: {
+      color: theme.colors.textSecondary,
+      fontSize: 12,
+      paddingHorizontal: 6,
+    },
+    graphContainer: {
+      alignItems: "center",
+      marginTop: 10,
+      width: "100%",
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      marginBottom: 8,
+      textAlign: "center",
+      color: theme.colors.textPrimary,
+    },
+    liveNotice: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      marginBottom: 8,
+      textAlign: "center",
+    },
+    legend: {
+      flexDirection: "row",
+      justifyContent: "center",
+      marginBottom: 5,
+    },
+    legendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginHorizontal: 20,
+    },
+    dot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginRight: 5,
+    },
+    legendText: {
+      fontSize: 12,
+      color: theme.colors.textPrimary,
+    },
+    chartScroll: {
+      paddingRight: 12,
+    },
+    chartCanvas: {
+      position: "relative",
+    },
+    chartTooltip: {
+      position: "absolute",
+      width: TOOLTIP_WIDTH,
+      backgroundColor: hexWithAlpha(theme.colors.overlaySoft, 0.92),
+      borderRadius: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+    },
+    chartTooltipTitle: {
+      color: theme.colors.textInverse,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    chartTooltipTime: {
+      color: hexWithAlpha(theme.colors.textInverse, 0.82),
+      fontSize: 10,
+      marginTop: 2,
+    },
+    scrollControls: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      width: "100%",
+      marginTop: 4,
+      marginBottom: 6,
+      paddingRight: 10,
+    },
+    scrollBtn: {
+      backgroundColor: theme.colors.buttonGhost,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 16,
+      marginLeft: 8,
+    },
+    scrollBtnDisabled: {
+      opacity: 0.5,
+    },
+    scrollBtnText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: theme.colors.buttonGhostText,
+    },
+    xLabel: {
+      marginTop: 2,
+      fontSize: 12,
+      color: theme.colors.textPrimary,
+      fontWeight: "bold",
+    },
+    yLabel: {
+      position: "absolute",
+      left: -15,
+      top: 150,
+      transform: [{ rotate: "-90deg" }],
+      fontSize: 14,
+      fontWeight: "bold",
+      color: theme.colors.textPrimary,
+    },
+    downloadBtn: {
+      backgroundColor: theme.colors.accent,
+      paddingVertical: 8,
+      paddingHorizontal: 20,
+      borderRadius: 20,
+      marginTop: 15,
+    },
+    downloadText: {
+      color: theme.colors.textPrimary,
+      fontWeight: "bold",
+      fontSize: 14,
+    },
+    footer: {
+      height: 22,
+      width: "100%",
+    },
+  });
+}

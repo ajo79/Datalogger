@@ -22,7 +22,6 @@ import {
   ScrollView,
   Image,
   TextInput,
-  ImageBackground,
   SafeAreaView,
 } from 'react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -30,8 +29,9 @@ import { LineChart } from "react-native-chart-kit";
 import { fetchRealTimeDataMonitor, fetchAllIoTReadings } from '../api/dataService';
 import { computeIsOnline } from "../utils/deviceHealth";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { navigateToTabRoute } from "../navigation/navHelpers";
 import { useResponsiveLayout } from "../theme/responsive";
+import { hexWithAlpha, useAppTheme } from "../theme";
+import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 
 const MIN_POINT_WIDTH = 60; // px per point for horizontal scroll space
 const MAX_GRAPH_POINTS = 100;
@@ -42,9 +42,10 @@ const TOOLTIP_WIDTH = 170;
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function GraphScreen({ navigation }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const ui = useResponsiveLayout();
   const screenWidth = ui.width;
-  const navigateToTab = (route) => navigateToTabRoute(navigation, route);
 // --- State for Date Management ---
 const formatDate = (d) =>
   `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
@@ -715,41 +716,11 @@ const handleManualDate = (field, text) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header Wave Image */}
-      <Image
-        source={require('../../assets/images/WaveTop.png')}
-        style={styles.headerImage}
+      <ModernTopHeader
+        title="GRAPH"
+        leftIcon={require("../../assets/images/MoreTop.png")}
+        onLeftPress={() => navigation.navigate("Sidebar")}
       />
-
-      {/* Top Header Bar */}
-      <View style={[styles.topHeader, { paddingHorizontal: ui.contentHorizontalPadding }]}>
-        {/* Left Side: Sidebar Button */}
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={styles.headerIconBtn}
-            onPress={() => navigation.navigate('Sidebar')}
-          >
-            <Image
-              source={require('../../assets/images/MoreTop.png')}
-              style={styles.iconSmall1}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Center Title */}
-        <Text
-          style={[styles.headerText, { fontSize: ui.font(25, { min: 21, max: 27 }) }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-        >
-          GRAPH
-        </Text>
-
-        {/* Right Side: Spacer/Placeholder */}
-        <View style={styles.headerLeft} />
-      </View>
 
       {/* Main Content ScrollView */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -816,7 +787,7 @@ const handleManualDate = (field, text) => {
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="All devices"
-              placeholderTextColor="#888"
+              placeholderTextColor={theme.colors.inputPlaceholder}
               maxLength={48}
               maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
             />
@@ -910,14 +881,14 @@ const handleManualDate = (field, text) => {
         <View style={styles.centerBox}>
           {viewMode === 'live' && !!liveNotice && (
             <View style={[styles.noticeCard, styles.noticeCardCentered]}>
-              <MaterialCommunityIcons name="information" size={16} color="#0b5fff" style={styles.cardIcon} />
+              <MaterialCommunityIcons name="information" size={16} color={theme.colors.brand} style={styles.cardIcon} />
               <Text style={[styles.noticeText, styles.noticeTextCentered]}>{liveNotice}</Text>
             </View>
           )}
 
           {viewMode === 'live' && offlineSummary && (
             <View style={[styles.noticeCard, styles.offlineCard]}>
-              <MaterialCommunityIcons name="wifi-off" size={16} color="#c0392b" style={styles.cardIcon} />
+              <MaterialCommunityIcons name="wifi-off" size={16} color={theme.colors.danger} style={styles.cardIcon} />
               <Text style={[styles.offlineText, styles.offlineTextCentered]} numberOfLines={2}>
                 Offline: {offlineSummary}
               </Text>
@@ -926,7 +897,7 @@ const handleManualDate = (field, text) => {
 
           {viewMode === 'history' && !!historyNotice && (
             <View style={[styles.noticeCard, styles.noticeCardCentered]}>
-              <MaterialCommunityIcons name="calendar-remove" size={16} color="#0b5fff" style={styles.cardIcon} />
+              <MaterialCommunityIcons name="calendar-remove" size={16} color={theme.colors.brand} style={styles.cardIcon} />
               <Text style={[styles.noticeText, styles.noticeTextCentered]}>{historyNotice}</Text>
             </View>
           )}
@@ -1030,19 +1001,19 @@ const handleManualDate = (field, text) => {
                     fromZero
                     segments={5}
                     chartConfig={{
-                      backgroundColor: "#fff",
-                      backgroundGradientFrom: "#fff",
-                      backgroundGradientTo: "#fff",
+                      backgroundColor: theme.colors.surfaceElevated,
+                      backgroundGradientFrom: theme.colors.surfaceElevated,
+                      backgroundGradientTo: theme.colors.surfaceElevated,
                       decimalPlaces: 1, // 1 decimal for precision
-                      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                      color: (opacity = 1) => hexWithAlpha(theme.colors.textPrimary, opacity),
+                      labelColor: (opacity = 1) => hexWithAlpha(theme.colors.textPrimary, opacity),
                       style: {
                         borderRadius: 16
                       },
                       propsForDots: {
                         r: "5",
                         strokeWidth: "2",
-                        stroke: "#ffa726"
+                        stroke: theme.colors.accent
                       }
                     }}
                     onDataPointClick={(point) => {
@@ -1141,114 +1112,19 @@ const handleManualDate = (field, text) => {
         onCancel={hideDatePicker}
       />
 
-      {/* --- Bottom Navigation Bar --- */}
-      <ImageBackground
-        source={require('../../assets/images/WaveBottom.png')}
-        style={styles.bottomNavBg}
-        resizeMode="stretch"
-      >
-        <View style={styles.navContainer}>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Dashboard")}
-          >
-            <Image
-              source={require('../../assets/images/GraphIcon.png')}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              DASH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Home")}
-          >
-            <Image
-              source={require('../../assets/images/HomeIcon.png')}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              HOME
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Graph")}
-          >
-            <Image
-              source={require('../../assets/images/GraphIcon.png')}
-              style={[styles.navIcon1, { width: ui.navIconSize + 4, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              GRAPH
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("Alarm")}
-          >
-            <Image
-              source={require('../../assets/images/AlarmIcon.png')}
-              style={[styles.navIcon2, { width: ui.navIconSize - 2, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              ALARM
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigateToTab("More")}
-          >
-            <Image
-              source={require('../../assets/images/MoreIcon.png')}
-              style={[styles.navIcon, { width: ui.navIconSize, height: ui.navIconSize + 2 }]}
-            />
-            <Text
-              style={[styles.navText, { fontSize: ui.navTextSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
-            >
-              MORE
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernBottomNav navigation={navigation} activeRoute="Graph" />
     </SafeAreaView>
   );
 }
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.canvas,
   },
 
   /* Header Layout */
@@ -1286,7 +1162,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 25,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
     textAlign: 'center',
     flex: 1,
     paddingHorizontal: 8,
@@ -1294,7 +1170,7 @@ const styles = StyleSheet.create({
 
   /* Scrollable Content */
   scrollContent: {
-    paddingBottom: 100, // Space for bottom navigation
+    paddingBottom: 112, // Space for bottom navigation
   },
 
   /* Date Filter Form */
@@ -1309,23 +1185,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#000',
+    borderColor: colors.borderStrong,
     borderRadius: 5,
     paddingHorizontal: 5,
     marginTop: 5,
     width: '100%',
     height: 40,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.inputBackground,
   },
   label: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
   },
   dateInput: {
     flex: 1,
     fontSize: 14,
-    color: '#000',
+    color: colors.inputText,
     paddingVertical: 0,
   },
   calendarIcon: {
@@ -1357,17 +1233,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: '#e3e3e3',
+    backgroundColor: colors.buttonGhost,
   },
   pagerBtnDisabled: {
     opacity: 0.5,
   },
   pagerText: {
-    color: '#000',
+    color: colors.buttonGhostText,
     fontWeight: '600',
   },
   pagerLabel: {
-    color: '#444',
+    color: colors.textSecondary,
     fontSize: 12,
     paddingHorizontal: 6,
   },
@@ -1387,8 +1263,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#b9c0cc',
-    backgroundColor: '#eef1f5',
+    borderColor: colors.border,
+    backgroundColor: colors.buttonGhost,
     marginHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1398,16 +1274,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   modeBtnActive: {
-    backgroundColor: '#0b5fff',
-    borderColor: '#0b5fff',
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   modeBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#415063',
+    color: colors.textSecondary,
   },
   modeBtnTextActive: {
-    color: '#fff',
+    color: colors.textInverse,
   },
   themedButton: {
     flexDirection: 'row',
@@ -1416,7 +1292,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 25, // Rounded pill shape like Login
-    shadowColor: "#000",
+    shadowColor: colors.overlaySoft,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
@@ -1425,10 +1301,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   buttonPrimary: {
-    backgroundColor: '#004080', // Deep Blue (Theme)
+    backgroundColor: colors.buttonPrimary,
   },
   buttonSecondary: {
-    backgroundColor: '#28a745', // Success Green
+    backgroundColor: colors.buttonSecondary,
   },
   centerBox: {
     alignItems: 'center',
@@ -1449,22 +1325,22 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   chipLive: {
-    backgroundColor: '#0b5fff',
+    backgroundColor: colors.brand,
   },
   chipMuted: {
-    backgroundColor: '#7e8899',
+    backgroundColor: colors.textMuted,
   },
   chipIcon: {
     marginRight: 4,
   },
   chipText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontWeight: '700',
     fontSize: 12,
     textTransform: 'uppercase',
   },
   noticeText: {
-    color: '#0b5fff',
+    color: colors.brand,
     fontSize: 13,
     flex: 1,
     textAlign: 'left',
@@ -1472,7 +1348,7 @@ const styles = StyleSheet.create({
   noticeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e8f0ff',
+    backgroundColor: colors.brandSoft,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -1488,7 +1364,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   offlineCard: {
-    backgroundColor: '#fdecea',
+    backgroundColor: colors.accentSoft,
   },
   cardIcon: {
     marginRight: 6,
@@ -1507,7 +1383,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   offlineText: {
-    color: '#c0392b',
+    color: colors.danger,
     fontSize: 12,
     flex: 1,
   },
@@ -1516,20 +1392,20 @@ const styles = StyleSheet.create({
   },
   modeText: {
     fontSize: 16,
-    color: 'blue',
+    color: colors.brand,
     fontWeight: '600',
   },
   waitingText: {
     textAlign: 'center',
     marginTop: 20,
-    color: '#888',
+    color: colors.textMuted,
   },
   buttonDisabled: {
     opacity: 0.7,
-    backgroundColor: '#6c757d',
+    backgroundColor: colors.textMuted,
   },
   buttonTextTheme: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -1537,7 +1413,7 @@ const styles = StyleSheet.create({
   searchIconTheme: {
     width: 20,
     height: 20,
-    tintColor: '#fff',
+    tintColor: colors.textInverse,
     marginRight: 8,
     resizeMode: 'contain',
   },
@@ -1545,11 +1421,11 @@ const styles = StyleSheet.create({
   searchIcon: {
     width: 18,
     height: 18,
-    tintColor: '#fff',
+    tintColor: colors.textInverse,
     marginRight: 8,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -1560,33 +1436,33 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.border,
     borderRadius: 5,
     overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-    backgroundColor: '#fff',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.tableRow,
   },
   headerRow: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: colors.surfaceAlt,
   },
   headerCell: {
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
     textAlign: 'center',
     paddingVertical: 10,
     borderRightWidth: 1,
-    borderRightColor: '#ccc',
+    borderRightColor: colors.border,
   },
   cellText: {
-    color: '#000',
+    color: colors.textPrimary,
     textAlign: 'center',
     paddingVertical: 10,
     borderRightWidth: 1,
-    borderRightColor: '#ccc',
+    borderRightColor: colors.border,
     fontSize: 12,
   },
   // Column Widths
@@ -1615,18 +1491,18 @@ const styles = StyleSheet.create({
   navIcon: { width: 28, height: 30, resizeMode: 'contain', marginBottom: 4 },
   navIcon1: { width: 35, height: 30, resizeMode: 'contain', marginBottom: 4 },
   navIcon2: { width: 25, height: 30, resizeMode: 'contain', marginBottom: 4 },
-  navText: { fontWeight: 'bold', fontSize: 12, color: '#000', textAlign: 'center' },
+  navText: { fontWeight: 'bold', fontSize: 12, color: colors.textPrimary, textAlign: 'center' },
 
   /* Chart Styles */
   chartContainer: {
     alignItems: 'stretch',
     marginVertical: 10,
     marginHorizontal: 10,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 10,
     padding: 8,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.border,
   },
   chartStyle: {
     marginVertical: 8,
@@ -1644,12 +1520,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   chartTooltipTitle: {
-    color: '#f8fafc',
+    color: colors.textInverse,
     fontSize: 11,
     fontWeight: '700',
   },
   chartTooltipTime: {
-    color: '#cbd5e1',
+    color: hexWithAlpha(colors.textInverse, 0.82),
     fontSize: 10,
     marginTop: 2,
   },
@@ -1663,18 +1539,18 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   scrollBtn: {
-    backgroundColor: '#e2e8f0',
+    backgroundColor: colors.buttonGhost,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
     marginLeft: 8,
   },
-  scrollBtnText: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  scrollBtnText: { fontSize: 14, fontWeight: '800', color: colors.buttonGhostText },
   dotValue: {
     position: 'absolute',
     fontSize: 10,
     fontWeight: '700',
-    color: '#111',
+    color: colors.textPrimary,
     backgroundColor: 'rgba(255,255,255,0.9)',
     paddingHorizontal: 4,
     paddingVertical: 1,
@@ -1685,7 +1561,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
-});
+  });
+}

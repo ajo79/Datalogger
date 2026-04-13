@@ -10,9 +10,10 @@
  * - Simple Card display for Temperature and Humidity.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, SafeAreaView, ActivityIndicator } from 'react-native';
 import { fetchData } from '../api/dataService';
+import { hexWithAlpha, useAppTheme } from "../theme";
 
 const parseBoolean = (value) => {
   if (typeof value === 'boolean') return value;
@@ -34,7 +35,7 @@ const formatMetricValue = (value) => {
 /**
  * Component to render individual data items in the list.
  */
-const DataItem = ({ item }) => (
+const DataItem = ({ item, styles }) => (
   <View style={styles.itemContainer}>
     <Text style={styles.location}>{item.deviceId}</Text>
     <Text style={styles.metaText}>
@@ -77,6 +78,8 @@ const DataItem = ({ item }) => (
 );
 
 const DataScreen = () => {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -101,7 +104,7 @@ const DataScreen = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E3A8A" />
+        <ActivityIndicator size="large" color={theme.colors.brandDark} />
       </View>
     );
   }
@@ -121,7 +124,7 @@ const DataScreen = () => {
       <Text style={styles.title}>Live Data</Text>
       <FlatList
         data={data}
-        renderItem={({ item }) => <DataItem item={item} />}
+        renderItem={({ item }) => <DataItem item={item} styles={styles} />}
         keyExtractor={(item, idx) => `${String(item?.deviceId || 'Unknown')}_${String(item?.ts ?? idx)}_${idx}`}
         contentContainerStyle={styles.listContainer}
       />
@@ -131,27 +134,31 @@ const DataScreen = () => {
 
 /* ------------------------- STYLES ------------------------- */
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.canvas,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
     textAlign: 'center',
     marginVertical: 20,
-    color: '#1E3A8A',
+    color: colors.brandDark,
   },
   listContainer: {
     paddingHorizontal: 20,
   },
   itemContainer: {
-    backgroundColor: '#FFC371',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: hexWithAlpha(colors.brand, 0.2),
+    shadowColor: colors.overlaySoft,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -163,12 +170,12 @@ const styles = StyleSheet.create({
   location: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1E3A8A',
+    color: colors.brandDark,
     marginBottom: 10,
   },
   metaText: {
     fontSize: 12,
-    color: '#222',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   dataRow: {
@@ -178,12 +185,12 @@ const styles = StyleSheet.create({
   },
   dataLabel: {
     fontSize: 18,
-    color: '#333',
+    color: colors.textSecondary,
   },
   dataValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1E3A8A',
+    color: colors.brandDark,
     flexShrink: 1, // Prevent overflow
   },
   center: {
@@ -193,8 +200,9 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: 'red',
+    color: colors.danger,
   },
-});
+  });
+}
 
 export default DataScreen;

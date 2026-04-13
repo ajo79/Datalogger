@@ -13,9 +13,9 @@ function makeShadow({ opacity = 0.1, radius = 6, offsetY = 2, elevation = 2 } = 
 }
 
 const shadows = Object.freeze({
-  card: makeShadow({ opacity: 0.08, radius: 8, offsetY: 2, elevation: 2 }),
-  raised: makeShadow({ opacity: 0.12, radius: 12, offsetY: 4, elevation: 4 }),
-  focus: makeShadow({ opacity: 0.2, radius: 14, offsetY: 5, elevation: 5 }),
+  card: makeShadow({ opacity: 0.08, radius: 12, offsetY: 3, elevation: 3 }),
+  raised: makeShadow({ opacity: 0.12, radius: 16, offsetY: 6, elevation: 5 }),
+  focus: makeShadow({ opacity: 0.2, radius: 16, offsetY: 6, elevation: 6 }),
 });
 
 export default shadows;

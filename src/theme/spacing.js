@@ -6,6 +6,7 @@ const spacing = Object.freeze({
   lg: 20,
   xl: 24,
   xxl: 32,
+  xxxl: 40,
 });
 
 export const screenPadding = Object.freeze({

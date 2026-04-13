@@ -51,6 +51,7 @@ cd ios && bundle exec pod install && cd ..
   - `docs/datalogger/ARCHITECTURE.md`
   - `docs/datalogger/API_AND_DATA_CONTRACT.md`
   - `docs/datalogger/SCREENS_AND_NAVIGATION.md`
+  - `docs/datalogger/FEATURE_INVENTORY.md`
   - `docs/datalogger/TECHNICAL_REQUIREMENTS.md`
   - `docs/datalogger/DEVELOPER_INSTRUCTIONS.md`
   - `docs/datalogger/OPERATIONS_TROUBLESHOOTING.md`

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { saveSession, saveUser } from "../storage/userStorage";
 import {
   View,
@@ -12,8 +12,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { navigateToTabRoute } from "../navigation/navHelpers";
+import { hexWithAlpha, useAppTheme } from "../theme";
+import { AnimatedPressable } from "../components/ui";
 
 export default function SignUpScreen({ navigation }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const colors = theme.colors;
   const [name, setName] = useState("");
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
@@ -53,7 +58,7 @@ export default function SignUpScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
@@ -73,7 +78,7 @@ export default function SignUpScreen({ navigation }) {
             value={name}
             onChangeText={setName}
             placeholder="Anil Patil"
-            placeholderTextColor="#BEBEBE"
+            placeholderTextColor={colors.inputPlaceholder}
           />
 
           <Text style={styles.label}>UserID</Text>
@@ -83,7 +88,7 @@ export default function SignUpScreen({ navigation }) {
             value={userId}
             onChangeText={setUserId}
             placeholder="hello@reallygreatsite.com"
-            placeholderTextColor="#BEBEBE"
+            placeholderTextColor={colors.inputPlaceholder}
             autoCapitalize="none"
           />
 
@@ -96,7 +101,7 @@ export default function SignUpScreen({ navigation }) {
               value={password}
               onChangeText={setPassword}
               placeholder="******"
-              placeholderTextColor="#BEBEBE"
+              placeholderTextColor={colors.inputPlaceholder}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
               <Image
@@ -119,7 +124,7 @@ export default function SignUpScreen({ navigation }) {
               value={confirm}
               onChangeText={setConfirm}
               placeholder="******"
-              placeholderTextColor="#BEBEBE"
+              placeholderTextColor={colors.inputPlaceholder}
             />
             <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
               <Image
@@ -134,11 +139,11 @@ export default function SignUpScreen({ navigation }) {
           </View>
 
           {/* SignUp Button */}
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.button}
             onPress={handleSignUp}>
             <Text style={styles.buttonText}>SignUp</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           {/* Footer */}
           <TouchableOpacity onPress={goToLogin}>
@@ -153,15 +158,17 @@ export default function SignUpScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
   header: {
     height: 100,
-    backgroundColor: "#fff",
+    backgroundColor: colors.canvas,
     alignItems: "flex-start",
     justifyContent: "flex-end",
   },
   headerShape: {
-    backgroundColor: "#FFC371",
+    backgroundColor: colors.brand,
     borderBottomRightRadius: 120,
     width: 260,
     height: 120,
@@ -169,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 20,
     marginBottom: -30,
-    shadowColor: "#FFA500",
+    shadowColor: colors.brand,
     shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 6,
@@ -177,7 +184,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#fff",
+    color: colors.white,
     paddingBottom: 20,
     paddingLeft: 50,
     alignSelf: "flex-start",
@@ -193,22 +200,22 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 5,
     letterSpacing: 2,
-    color: "#222",
+    color: colors.textPrimary,
   },
   input: {
-    borderColor: "#FF7F50",
+    borderColor: hexWithAlpha(colors.brand, 0.3),
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 15,
     paddingVertical: 10,
     fontSize: 16,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     marginBottom: 0,
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderColor: "#FF7F50",
+    borderColor: hexWithAlpha(colors.brand, 0.3),
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 5,
@@ -217,25 +224,25 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 30,
-    backgroundColor: "#FF7F50",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     paddingVertical: 17,
     alignItems: "center",
   },
   buttonText: {
-    color: "#fff",
+    color: colors.textPrimary,
     fontSize: 20,
     fontWeight: "600",
   },
   footerText: {
     textAlign: "center",
-    color: "#888",
+    color: colors.textMuted,
     marginTop: 25,
     fontSize: 15,
   },
   logText: {
     textAlign: "center",
-    color: "#FF7F50",
+    color: colors.brand,
     fontWeight: "500",
     marginTop: 25,
     fontSize: 15,
@@ -260,7 +267,8 @@ const styles = StyleSheet.create({
   },
   subText: {
     textAlign: 'center',
-    color: '#666',
+    color: colors.textMuted,
     marginBottom: 20,
   }
-});
+  });
+}

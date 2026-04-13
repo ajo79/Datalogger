@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,16 @@ import {
   Alert,
   SafeAreaView,
   ScrollView,
-  ImageBackground,
   Linking,
 } from 'react-native';
 import { saveSession } from '../storage/userStorage';
 import { authenticate } from '../api/authService';
+import { hexWithAlpha, useAppTheme } from "../theme";
+import { AnimatedPressable } from "../components/ui";
 
 const LoginScreen = ({ navigation }) => {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
    const [submitting, setSubmitting] = useState(false);
@@ -61,14 +64,9 @@ const LoginScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header (Yellow Wave + Title) */}
-      <ImageBackground
-        source={require("../../assets/images/WaveTop.png")}
-        style={styles.header}
-        resizeMode="cover"
-      >
+      <View style={styles.header}>
         <Text style={styles.headerText}>BIOT</Text>
-      </ImageBackground>
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
@@ -90,7 +88,7 @@ const LoginScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Enter Email"
-            placeholderTextColor="#aaa"
+            placeholderTextColor={theme.colors.inputPlaceholder}
             value={email}
             onChangeText={setEmail}
           />
@@ -105,7 +103,7 @@ const LoginScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="******"
-            placeholderTextColor="#aaa"
+            placeholderTextColor={theme.colors.inputPlaceholder}
             secureTextEntry
             value={pwd}
             onChangeText={setPwd}
@@ -119,35 +117,33 @@ const LoginScreen = ({ navigation }) => {
         </TouchableOpacity>
 
         {/* Login Button */}
-        <TouchableOpacity
+        <AnimatedPressable
           style={styles.loginButton}
+          contentStyle={styles.loginButtonInner}
           onPress={handleLogin}
           disabled={submitting}
         >
           <Text style={styles.loginButtonText}>{submitting ? 'Signing in...' : 'Login'}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         {/* Spacer flex to push footer */}
         <View style={{ flex: 1 }} />
       </ScrollView>
 
-      {/* Footer (Yellow Wave + Text) */}
-      <ImageBackground
-        source={require("../../assets/images/WaveBottom.png")}
-        style={styles.footer}
-        resizeMode="cover"
-      >
+      <View style={styles.footer}>
         <Text style={styles.footerText}>Proudly Clouded</Text>
-      </ImageBackground>
+      </View>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
+function createStyles(theme) {
+  const colors = theme.colors;
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
   scrollContainer: {
     flexGrow: 1,
     alignItems: "center",
@@ -155,14 +151,17 @@ const styles = StyleSheet.create({
   },
   header: {
     width: "100%",
-    height: 80,
+    height: 86,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: hexWithAlpha(colors.brand, 0.14),
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
   },
   headerText: {
     fontSize: 34,
     fontWeight: "bold",
-    color: "#000",
+    color: colors.brandDark,
     marginTop: 10,
   },
   logo: {
@@ -173,7 +172,7 @@ const styles = StyleSheet.create({
   },
   subTitle: {
     fontSize: 14,
-    color: "#333",
+    color: colors.textSecondary,
     marginBottom: 5,
     textAlign: "center",
     paddingHorizontal: 20,
@@ -181,11 +180,11 @@ const styles = StyleSheet.create({
   loginTitle: {
     fontSize: 30,
     fontWeight: "bold",
-    color: "#000",
+    color: colors.textPrimary,
   },
   signInText: {
     fontSize: 14,
-    color: "#555",
+    color: colors.textMuted,
     marginBottom: 20,
   },
   labelContainer: {
@@ -196,62 +195,71 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: "bold",
-    color: "#000",
+    color: colors.textPrimary,
     marginLeft: 5,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#004080",
-    borderRadius: 10,
+    borderColor: hexWithAlpha(colors.brand, 0.36),
+    borderRadius: 14,
     paddingHorizontal: 10,
     marginVertical: 5,
     width: "85%",
+    backgroundColor: colors.surface,
   },
   input: {
     flex: 1,
     height: 45,
     fontSize: 14,
-    color: "#000",
+    color: colors.textPrimary,
   },
   icon: {
     width: 22,
     height: 22,
-    tintColor: "#004080",
+    tintColor: colors.brandDark,
   },
   forgotText: {
     alignSelf: "flex-start",
     marginTop: 5,
-    color: "#000",
+    color: colors.textSecondary,
     fontWeight: "500",
   },
 
   loginButton: {
-    backgroundColor: "#f4a020",
+    backgroundColor: colors.accent,
     paddingVertical: 12,
     paddingHorizontal: 60,
-    borderRadius: 10,
+    borderRadius: 14,
     marginTop: 20,
-    borderWidth: 2,
-    borderColor: "#004080",
+    borderWidth: 1,
+    borderColor: hexWithAlpha(colors.brandDark, 0.4),
+  },
+  loginButtonInner: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   loginButtonText: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#000",
+    color: colors.textPrimary,
   },
   footer: {
     width: "100%",
-    height: 80,
+    height: 70,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: hexWithAlpha(colors.brand, 0.09),
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
   },
   footerText: {
     fontSize: 16,
     fontWeight: "500",
-    color: "#000",
+    color: colors.textSecondary,
   },
-});
+  });
+}
 
 export default LoginScreen;

@@ -1,21 +1,23 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  ImageBackground,
   Alert,
-  Image,
   ScrollView,
 } from "react-native";
 
-import IMAGES from "../constants/images";
 import { clearSession } from "../storage/userStorage";
-import { logoutToAuthRoot } from "../navigation/navHelpers";
+import { goBackWithFallback, logoutToAuthRoot } from "../navigation/navHelpers";
+import { useAppTheme } from "../theme";
+import { ModernTopHeader } from "../components/ui";
 
 export default function SidebarScreen({ navigation }) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   const logoutToAuth = async () => {
     await clearSession();
     logoutToAuthRoot(navigation);
@@ -44,22 +46,11 @@ export default function SidebarScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Wave */}
-      <ImageBackground
-        source={IMAGES.WaveTop}
-        style={styles.header}
-        resizeMode="stretch"
-      >
-        <View style={styles.headerContent}>
-          <Text style={styles.headerText}>BIOT</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Image
-            source={require("../../assets/images/BackIcon.png")}
-            style={styles.iconSmall1}
-          />
-        </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <ModernTopHeader
+        title="BIOT"
+        leftIcon={require("../../assets/images/BackIcon.png")}
+        onLeftPress={() => goBackWithFallback(navigation, "Home")}
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Menu Items */}
@@ -85,76 +76,46 @@ export default function SidebarScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      {/* Footer Wave */}
-      <ImageBackground
-        source={IMAGES.WaveBottom}
-        style={styles.bottomNavBg}
-        resizeMode="stretch"
-      />
+      <View style={styles.bottomNavBg} />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    width: "100%",
-    height: 100,
-    justifyContent: "flex-end",
-    alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  headerContent: {
-    justifyContent: "flex-end",
-    alignItems: "flex-start",
-  },
-  headerText: {
-    paddingLeft: 155,
-    fontSize: 25,
-    fontWeight: "bold",
-    color: "#000",
-    top: -5,
-  },
-  iconSmall1: {
-    width: 35,
-    height: 35,
-    left:15,
-    top: -35,
-  },
-  menuItem: {
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ccc",
-    paddingHorizontal: 20,
-  },
-  menuText: {
-    fontSize: 18,
-    color: "#444",
-  },
-  logoutText: {
-    fontSize: 18,
-    color: "#d00",
-    fontWeight: "bold",
-  },
-  scrollContent: {
-    paddingBottom: 100,
-  },
-  versionContainer: {
-    marginTop: 50,
-    width: "100%",
-    alignItems: "center",
-  },
-  versionText: {
-    fontSize: 14,
-    color: "#555",
-  },
-  bottomNavBg: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 80,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.canvas,
+    },
+    menuItem: {
+      paddingVertical: 15,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      paddingHorizontal: 20,
+    },
+    menuText: {
+      fontSize: 18,
+      color: theme.colors.textSecondary,
+    },
+    logoutText: {
+      fontSize: 18,
+      color: theme.colors.danger,
+      fontWeight: "bold",
+    },
+    scrollContent: {
+      paddingBottom: 24,
+    },
+    versionContainer: {
+      marginTop: 50,
+      width: "100%",
+      alignItems: "center",
+    },
+    versionText: {
+      fontSize: 14,
+      color: theme.colors.textMuted,
+    },
+    bottomNavBg: {
+      height: 20,
+    },
+  });
+}

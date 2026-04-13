@@ -22,6 +22,7 @@ import HelpSupportScreen from '../screens/HelpSupportScreen';
 import ProfileScreen from "../screens/ProfileScreen";
 import SidebarScreen from "../screens/SidebarScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import ThemesScreen from "../screens/ThemesScreen";
 import FactorySettingsScreen from "../screens/FactorySettingsScreen";
 
 import TabNavigator from './TabNavigator';
@@ -30,7 +31,10 @@ const Stack = createNativeStackNavigator();
 
 export default function MainStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Home">
+    <Stack.Navigator
+      screenOptions={{ headerShown: false, animation: "fade_from_bottom", animationDuration: 180 }}
+      initialRouteName="Home"
+    >
       {/* Main Tabbed Interface */}
       <Stack.Screen name="Home" component={TabNavigator} />
       
@@ -49,6 +53,7 @@ export default function MainStack() {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Themes" component={ThemesScreen} />
       <Stack.Screen name="FactorySettings" component={FactorySettingsScreen} />
     </Stack.Navigator>
   );

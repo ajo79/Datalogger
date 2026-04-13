@@ -1,54 +1,7 @@
-import React from "react";
-import { Pressable, Text, StyleSheet, View } from "react-native";
-import colors from "../../theme/colors";
-import spacing from "../../theme/spacing";
-import radius from "../../theme/radius";
-import typography from "../../theme/typography";
-import shadows from "../../theme/shadows";
-
-const VARIANT_STYLES = StyleSheet.create({
-  primary: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  secondary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.brand,
-  },
-  ghost: {
-    backgroundColor: "transparent",
-    borderColor: colors.borderStrong,
-  },
-  danger: {
-    backgroundColor: colors.danger,
-    borderColor: colors.danger,
-  },
-});
-
-const LABEL_STYLES = StyleSheet.create({
-  primary: { color: colors.white },
-  secondary: { color: colors.brand },
-  ghost: { color: colors.textPrimary },
-  danger: { color: colors.white },
-});
-
-const SIZE_STYLES = StyleSheet.create({
-  sm: {
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  md: {
-    minHeight: 46,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  lg: {
-    minHeight: 52,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-});
+import React, { useMemo } from "react";
+import { Text, StyleSheet, View } from "react-native";
+import { useAppTheme } from "../../theme";
+import AnimatedPressable from "./AnimatedPressable";
 
 export default function ThemedButton({
   label,
@@ -62,56 +15,122 @@ export default function ThemedButton({
   style,
   textStyle,
 }) {
-  const variantStyle = VARIANT_STYLES[variant] || VARIANT_STYLES.primary;
-  const labelStyle = LABEL_STYLES[variant] || LABEL_STYLES.primary;
-  const sizeStyle = SIZE_STYLES[size] || SIZE_STYLES.md;
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { colors } = theme;
+
+  const variantStyles = useMemo(
+    () => ({
+      primary: {
+        backgroundColor: colors.buttonPrimary,
+        borderColor: colors.buttonPrimary,
+      },
+      secondary: {
+        backgroundColor: colors.buttonSecondary,
+        borderColor: colors.buttonSecondary,
+      },
+      ghost: {
+        backgroundColor: colors.buttonGhost,
+        borderColor: colors.borderStrong,
+      },
+      danger: {
+        backgroundColor: colors.danger,
+        borderColor: colors.danger,
+      },
+    }),
+    [colors]
+  );
+
+  const labelStyles = useMemo(
+    () => ({
+      primary: { color: colors.buttonPrimaryText },
+      secondary: { color: colors.buttonSecondaryText },
+      ghost: { color: colors.buttonGhostText },
+      danger: { color: colors.textInverse },
+    }),
+    [colors]
+  );
+
+  const sizeStyles = useMemo(
+    () => ({
+      sm: {
+        minHeight: 40,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.xs,
+      },
+      md: {
+        minHeight: 46,
+        paddingHorizontal: theme.spacing.lg,
+        paddingVertical: theme.spacing.sm,
+      },
+      lg: {
+        minHeight: 52,
+        paddingHorizontal: theme.spacing.xl,
+        paddingVertical: theme.spacing.md,
+      },
+    }),
+    [theme.spacing]
+  );
+
+  const variantStyle = variantStyles[variant] || variantStyles.primary;
+  const labelStyle = labelStyles[variant] || labelStyles.primary;
+  const sizeStyle = sizeStyles[size] || sizeStyles.md;
   const isDisabled = disabled || loading;
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={isDisabled}
-      style={({ pressed }) => [
+      style={[
         styles.base,
         variantStyle,
         sizeStyle,
-        shadows.card,
-        pressed && !isDisabled && styles.pressed,
+        theme.shadows.card,
+        styles.pressed,
         isDisabled && styles.disabled,
         style,
       ]}
+      contentStyle={styles.content}
     >
       {!!leftIcon && <View style={styles.iconLeft}>{leftIcon}</View>}
       <Text style={[styles.label, labelStyle, textStyle]} numberOfLines={1}>
         {loading ? "Please wait..." : label}
       </Text>
       {!!rightIcon && <View style={styles.iconRight}>{rightIcon}</View>}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  label: {
-    ...typography.button,
-  },
-  iconLeft: {
-    marginRight: spacing.xs,
-  },
-  iconRight: {
-    marginLeft: spacing.xs,
-  },
-  pressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.98 }],
-  },
-  disabled: {
-    opacity: 0.55,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    base: {
+      borderWidth: 1,
+      borderRadius: theme.radius.pill,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    label: {
+      ...theme.typography.button,
+    },
+    content: {
+      minHeight: "100%",
+      width: "100%",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    iconLeft: {
+      marginRight: theme.spacing.xs,
+    },
+    iconRight: {
+      marginLeft: theme.spacing.xs,
+    },
+    pressed: {
+      opacity: 0.96,
+    },
+    disabled: {
+      opacity: 0.55,
+    },
+  });
+}

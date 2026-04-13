@@ -1,37 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Pressable, View, Text, StyleSheet } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import colors, { hexWithAlpha } from "../../theme/colors";
-import spacing from "../../theme/spacing";
-import radius from "../../theme/radius";
-import typography from "../../theme/typography";
-
-const TONES = {
-  info: {
-    bg: hexWithAlpha(colors.info, 0.12),
-    border: hexWithAlpha(colors.info, 0.4),
-    icon: "information-outline",
-    iconColor: colors.info,
-  },
-  success: {
-    bg: hexWithAlpha(colors.success, 0.12),
-    border: hexWithAlpha(colors.success, 0.42),
-    icon: "check-circle-outline",
-    iconColor: colors.success,
-  },
-  warning: {
-    bg: hexWithAlpha(colors.warning, 0.18),
-    border: hexWithAlpha(colors.warning, 0.42),
-    icon: "alert-outline",
-    iconColor: "#B45309",
-  },
-  danger: {
-    bg: hexWithAlpha(colors.danger, 0.12),
-    border: hexWithAlpha(colors.danger, 0.42),
-    icon: "alert-circle-outline",
-    iconColor: colors.danger,
-  },
-};
+import { hexWithAlpha, useAppTheme } from "../../theme";
 
 export default function NoticeBanner({
   tone = "info",
@@ -42,7 +12,38 @@ export default function NoticeBanner({
   onPress,
   style,
 }) {
-  const cfg = TONES[tone] || TONES.info;
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const tones = useMemo(
+    () => ({
+      info: {
+        bg: hexWithAlpha(theme.colors.info, 0.12),
+        border: hexWithAlpha(theme.colors.info, 0.4),
+        icon: "information-outline",
+        iconColor: theme.colors.info,
+      },
+      success: {
+        bg: hexWithAlpha(theme.colors.success, 0.12),
+        border: hexWithAlpha(theme.colors.success, 0.42),
+        icon: "check-circle-outline",
+        iconColor: theme.colors.success,
+      },
+      warning: {
+        bg: hexWithAlpha(theme.colors.warning, 0.18),
+        border: hexWithAlpha(theme.colors.warning, 0.42),
+        icon: "alert-outline",
+        iconColor: theme.colors.warning,
+      },
+      danger: {
+        bg: hexWithAlpha(theme.colors.danger, 0.12),
+        border: hexWithAlpha(theme.colors.danger, 0.42),
+        icon: "alert-circle-outline",
+        iconColor: theme.colors.danger,
+      },
+    }),
+    [theme.colors]
+  );
+  const cfg = tones[tone] || tones.info;
   const Container = onPress ? Pressable : View;
   return (
     <Container
@@ -52,7 +53,7 @@ export default function NoticeBanner({
         {
           backgroundColor: cfg.bg,
           borderColor: cfg.border,
-          paddingVertical: dense ? spacing.xs : spacing.sm,
+          paddingVertical: dense ? theme.spacing.xs : theme.spacing.sm,
         },
         style,
       ]}
@@ -71,27 +72,29 @@ export default function NoticeBanner({
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  icon: {
-    marginTop: 1,
-    marginRight: spacing.xs,
-  },
-  content: {
-    flex: 1,
-  },
-  title: {
-    ...typography.bodyStrong,
-    color: colors.textPrimary,
-  },
-  message: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    base: {
+      borderWidth: 1,
+      borderRadius: theme.radius.sm,
+      paddingHorizontal: theme.spacing.sm,
+      flexDirection: "row",
+      alignItems: "flex-start",
+    },
+    icon: {
+      marginTop: 1,
+      marginRight: theme.spacing.xs,
+    },
+    content: {
+      flex: 1,
+    },
+    title: {
+      ...theme.typography.bodyStrong,
+      color: theme.colors.textPrimary,
+    },
+    message: {
+      ...theme.typography.body,
+      color: theme.colors.textSecondary,
+    },
+  });
+}
