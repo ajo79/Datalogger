@@ -1,44 +1,103 @@
 # Architecture
 
+Last reviewed: 2026-04-13
+
 ## 1. Overview
 
 `Datalogger` is a React Native app for BIOT telemetry monitoring with:
 
-- live and history data views
-- health dashboard
-- alarm table
+- dashboard health summaries
+- live and history graphing
+- alarm monitoring
 - CSV export
 - BLE runtime and factory configuration
-- UI design tokens/responsive helpers (`src/theme/`) and reusable UI primitives (`src/components/ui/`)
+- a runtime theme system with shared modern UI primitives
 
 ## 2. Runtime Flow
 
-1. `App.tsx` -> `SafeAreaProvider` -> `AppNavigator`
-2. `AppNavigator` initial route: `Animation`
+1. `App.tsx` wraps the app with `SafeAreaProvider`, `AppThemeProvider`, and `AppNavigator`.
+2. `AppNavigator` starts at `Animation`.
 3. `AnimationScreen`:
-   - starts splash animation
-   - prefetches fast status data
-   - checks session (`getSession`)
+   - runs startup animation
+   - starts fast-status prefetch
+   - checks `getSession`
    - routes to `Main` or `Auth`
-4. `AuthStack` and `MainStack` both provide app routes.
-5. `TabNavigator` logical tabs:
+4. `AuthStack` and `MainStack` both contain the runtime routes needed after startup.
+5. `TabNavigator` holds the logical tab routes:
    - `Dashboard`, `Home`, `Data`, `Graph`, `Alarm`, `More`
-   - native tab bar hidden; custom wave nav is rendered by screens
 
-## 3. Data Layer
+## 3. Navigation Architecture
 
-All API logic is centralized in `src/api/dataService.js`.
+- Root routes:
+  - `Animation`
+  - `Auth`
+  - `Main`
+- Visible primary bottom navigation uses `ModernBottomNav` inside screens.
+- The logical tab structure still lives in `TabNavigator`; native tab UI is hidden.
+- The default five-button bottom bar exposes:
+  - `Dashboard`, `Home`, `Graph`, `Alarm`, `More`
+- `Data` remains a real route in the tab and stack navigators, but it is not shown in that default five-button bar.
+- `BottomWaveNav` now forwards to `ModernBottomNav` for backward compatibility.
 
-- Endpoint:
+Navigation helpers in `src/navigation/navHelpers.js`:
+
+- `navigateToTabRoute`
+- `goBackWithFallback`
+- `logoutToAuthRoot`
+
+## 4. Theme Architecture
+
+- Theme provider:
+  - `AppThemeProvider`
+- Theme context API:
+  - `themeId`
+  - `theme`
+  - `setTheme(themeId)`
+  - `themeOptions`
+  - `hydrated`
+- Theme storage key:
+  - `@app_theme_v1`
+- Built-in themes:
+  - `lightIndustrial`
+  - `darkIndustrial`
+  - `highContrast`
+  - `softNeutral`
+- Shared token families:
+  - colors
+  - spacing
+  - radius
+  - shadows
+  - typography
+  - motion
+
+## 5. Shared UI Layer
+
+The UI layer is centered around reusable themed components in `src/components/ui/`:
+
+- `ModernTopHeader`
+- `ModernBottomNav`
+- `SurfaceCard`
+- `ThemedButton`
+- `ThemedInput`
+- `ScreenContainer`
+- `NoticeBanner`
+- `StatusChip`
+
+These components consume semantic theme tokens so visual changes can be made without changing route names or feature logic.
+
+## 6. Data Layer
+
+All AWS API access goes through `src/api/dataService.js`.
+
+- Base endpoint:
   - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
-- Request timeout:
+- Timeouts:
   - default `60000` ms
-  - fast status path `5000` ms
+  - fast status `5000` ms
 - Fast status cache:
   - in-memory, max age `30000` ms
-- Reads only (GET); no write API calls in mobile app.
 
-### Core service functions
+Key service functions:
 
 - `fetchDashboardData`
 - `fetchData`
@@ -47,88 +106,35 @@ All API logic is centralized in `src/api/dataService.js`.
 - `fetchAllIoTReadings`
 - `fetchESP32Alarms`
 
-### Normalization
-
-- handles Lambda proxy `body` and direct JSON
-- unmarshals DynamoDB typed attributes
-- flattens `payload`
-- normalizes BIOT parameters and compat fields
-- derives `tsServerMs`, `tsDeviceMs`, and `ts`
-- marks BIOT-valid rows with `_schemaValid`
-
-## 4. Health Model
-
-In `src/utils/deviceHealth.js`:
-
-- `OFFLINE_AFTER_MS = 30000`
-- dynamic offline threshold may override this using device publish interval
-- threshold clamp range: `30000..180000`
-- classification:
-  - `good`: online and no common issue/alarm
-  - `issue`: offline or common issue/alarm
-
-## 5. Polling Model
-
-- Home: `5000` ms
-- Dashboard: `5000` ms
-- Graph live mode: `5000` ms
-- GraphShow live mode: `5000` ms
-- Alarm (focused): `1000` ms
-- Settings screen also updates local mobile epoch display every `1000` ms
-
-## 6. BLE Architecture
+## 7. BLE Architecture
 
 ### Runtime settings (`SettingsScreen`)
 
-- scan/connect/disconnect BLE
-- read all parameters snapshot
-- write param 1..9 (single and write-all)
-- monitor:
-  - status characteristic
-  - all-params characteristic
-  - live telemetry characteristic
+- scan/connect/disconnect
+- read snapshot
+- write params `1..9`
+- set time
+- read/write device name
+- read/write receiver email
+- monitor BLE status and live telemetry
 
 ### Factory settings (`FactorySettingsScreen`)
 
 - unlock gate password: `blackstar`
-- scan/connect/disconnect BLE
-- read/update device ID characteristic
-- write Wi-Fi SSID/password characteristics
+- scan/connect/disconnect
+- read/update device ID
+- write Wi-Fi credentials
+- read/write factory email sender credentials
 
-### Contract/codec
+## 8. Storage and Persistence
 
-- UUID map: `src/ble/bleContract.js`
-- payload encoding/decoding: `src/ble/bleCodec.js`
+- `@user_credentials_v1`
+- `@user_session_v1`
+- `@alarm_logs_v1`
+- `@notification_enabled_v1`
+- `@app_theme_v1`
 
-## 7. Storage/Auth
+## 9. Non-Primary Code
 
-- `userStorage.js`
-  - `@user_credentials_v1`
-  - `@user_session_v1`
-- `authService.js`
-  - hardcoded factory credentials `Company_A / 1234`
-  - fallback local user validation
-- `alarmStorage.js`
-  - `@alarm_logs_v1`
-  - max 500 rows
-
-## 8. Native Layer
-
-### Android
-
-- `minSdkVersion=24`, `targetSdkVersion=36`, `compileSdkVersion=36`
-- BLE permissions:
-  - `BLUETOOTH_SCAN`
-  - `BLUETOOTH_CONNECT`
-  - legacy location/Bluetooth permissions for <= API 30
-
-### iOS
-
-- deployment target: 15.1
-- Info.plist includes Bluetooth and location usage descriptions
-- ATS keeps arbitrary loads disabled
-
-## 9. Known Non-Primary Code
-
-- `src/screens_1/` is legacy and not used by active navigator routes.
-- `SplashScreen.js` exists but current entry route is `AnimationScreen`.
+- `src/screens_1/` is legacy and not used in active runtime routes.
+- `SplashScreen.js` exists but the active startup entry is `AnimationScreen`.

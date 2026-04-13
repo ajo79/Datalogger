@@ -1,5 +1,7 @@
 # API and Data Contract
 
+Last reviewed: 2026-04-13
+
 ## 1. Endpoint
 
 - Base URL: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com`
@@ -7,6 +9,8 @@
 - Full URL: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
 
 All mobile API calls are HTTP `GET` and are implemented in `src/api/dataService.js`.
+
+The runtime theme system does not change this API contract.
 
 ## 2. Request Modes
 

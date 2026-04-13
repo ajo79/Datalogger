@@ -1,6 +1,8 @@
 # Datalogger Mobile App
 
-React Native app for BIOT telemetry monitoring, alarms, charting, CSV export, and BLE device configuration.
+Last reviewed: 2026-04-13
+
+React Native mobile app for BIOT telemetry monitoring, alarms, charting, CSV export, and BLE device configuration.
 
 ## Quick Start
 
@@ -21,16 +23,57 @@ bundle install
 cd ios && bundle exec pod install && cd ..
 ```
 
+## Android Emulator Quick Start
+
+1. Start Metro:
+
+```bash
+npm run start
+```
+
+2. Start an emulator from Android Studio Device Manager, or use:
+
+```bash
+emulator -list-avds
+emulator -avd <YourAvdName>
+```
+
+3. Confirm the emulator is visible:
+
+```bash
+adb devices
+```
+
+4. Install and run the app:
+
+```bash
+npm run android
+```
+
 ## Runtime Summary
 
-- Entry: `App.tsx` -> `AppNavigator`
+- Entry: `App.tsx` -> `SafeAreaProvider` -> `AppThemeProvider` -> `AppNavigator`
 - Root flow: `Animation` -> `Auth` or `Main`
-- Main tabs (hidden native tab bar, custom wave nav in screens):
+- Logical tab routes:
   - `Dashboard`, `Home`, `Data`, `Graph`, `Alarm`, `More`
+- Primary bottom navigation UI:
+  - `Dashboard`, `Home`, `Graph`, `Alarm`, `More`
+- `Data` still exists in `TabNavigator` and stack routes, but it is not part of the default five-button bottom bar.
+- Theme selection path:
+  - `More` -> `Settings` -> `Themes`
+- Built-in runtime themes:
+  - `Light Industrial`
+  - `Dark Industrial`
+  - `High Contrast`
+  - `Soft Neutral`
+- Theme persistence key:
+  - `@app_theme_v1`
+- Notification toggle persistence key:
+  - `@notification_enabled_v1`
+- Session persistence key:
+  - `@user_session_v1`
 - AWS API endpoint used by app:
   - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
-- Fast status path:
-  - `statusOnly=1`, 5s timeout, in-memory 30s cache
 
 ## Important Folders
 
@@ -39,16 +82,18 @@ cd ios && bundle exec pod install && cd ..
 - `src/api/`: API and normalization logic
 - `src/storage/`: AsyncStorage wrappers
 - `src/ble/`: BLE UUID contract and payload codec
-- `src/theme/`: design tokens and responsive layout helpers
-- `src/components/ui/`: reusable UI primitives (header/card/button/input/chip/banner)
+- `src/theme/`: theme definitions, provider, tokens, motion, responsive helpers
+- `src/components/ui/`: reusable themed UI primitives
 - `docs/datalogger/`: maintained technical docs
 
 ## Documentation
 
-- Root architecture: `ARCHITECTURE.md`
+- Root architecture summary:
+  - `ARCHITECTURE.md`
 - Detailed docs bundle:
   - `docs/datalogger/README.md`
   - `docs/datalogger/ARCHITECTURE.md`
+  - `docs/datalogger/THEMING_AND_UI_SYSTEM.md`
   - `docs/datalogger/API_AND_DATA_CONTRACT.md`
   - `docs/datalogger/SCREENS_AND_NAVIGATION.md`
   - `docs/datalogger/FEATURE_INVENTORY.md`
@@ -61,4 +106,5 @@ cd ios && bundle exec pod install && cd ..
 ## Notes
 
 - `src/screens_1/` is legacy and not used by active navigators.
-- `SplashScreen.js` exists but current entry route is `AnimationScreen`.
+- `src/components/BottomWaveNav.js` is now a compatibility wrapper over `ModernBottomNav`.
+- `SplashScreen.js` exists in the codebase, but the active entry route is `AnimationScreen`.

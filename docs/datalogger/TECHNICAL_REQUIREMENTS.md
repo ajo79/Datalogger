@@ -1,5 +1,7 @@
 # Technical Requirements
 
+Last reviewed: 2026-04-13
+
 ## 1. Framework and Package Baseline
 
 - React Native: `0.83.1`
@@ -9,6 +11,9 @@
   - `@react-navigation/native`
   - `@react-navigation/native-stack`
   - `@react-navigation/bottom-tabs`
+- Core UI/runtime:
+  - `react-native-safe-area-context`
+  - `react-native-vector-icons`
 - Data/chart:
   - `react-native-chart-kit`
   - `react-native-svg`
@@ -32,7 +37,7 @@
 
 ### iOS
 
-- deployment target: `15.1` (Xcode project setting)
+- deployment target: `15.1`
 - CocoaPods required for native dependency installation
 
 ## 3. Runtime Permissions
@@ -53,7 +58,7 @@
   - `BLUETOOTH_CONNECT`
 - API <= 30:
   - `ACCESS_FINE_LOCATION`
-- Export screen may request `WRITE_EXTERNAL_STORAGE` for older Android direct-download fallback path.
+- Export screen may request `WRITE_EXTERNAL_STORAGE` for older Android direct-download fallback.
 
 ### iOS Info.plist usage strings
 
@@ -63,11 +68,11 @@
 
 ## 4. API Contract Expectations
 
-The app requires reachable endpoint:
+The app requires a reachable endpoint:
 
 - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
 
-Expected arrays in response:
+Expected response arrays:
 
 - `IoTReadings`
 - `RealTimeDataMonitor`
@@ -75,33 +80,44 @@ Expected arrays in response:
 
 Optional pagination keys can appear under multiple aliases and nested objects.
 
-## 5. Data Contract Requirements (for full feature support)
+## 5. Data Contract Requirements
 
 Preferred BIOT telemetry fields:
 
 - `schemaVersion`
 - `msgType = telemetry`
 - `deviceId`
-- `tsEpochMs` (or alias)
+- `tsEpochMs` or an accepted alias
 - `parameters[]`
-- `status` (wifi/alarm state)
+- `status`
 
-History/graph/export accuracy depends on valid numeric device timestamps.
+History, graph, and export accuracy depend on valid numeric device timestamps.
 
-## 6. Performance/Runtime Assumptions
+## 6. Performance and Runtime Assumptions
 
 - Polling cadence:
-  - Home/Dashboard/Graph/GraphShow: 5 seconds.
-  - Alarm (focused): 1 second.
-  - Settings local mobile epoch display timer: 1 second (UI-only).
-- Default API timeout: 60 seconds.
-- Fast status timeout: 5 seconds.
-- Fast status cache max age: 30 seconds.
+  - Home, Dashboard, Graph, GraphShow: 5 seconds
+  - Alarm while focused: 1 second
+  - Settings mobile clock display: 1 second
+- Default API timeout: 60 seconds
+- Fast status timeout: 5 seconds
+- Fast status cache max age: 30 seconds
 
-## 7. Security Status (Current)
+## 7. Theme-System Requirements
 
-- Auth is local/factory fallback and not production-grade.
-- Credentials/session are stored in AsyncStorage.
-- Mobile API calls currently do not attach auth headers.
+- Theme switching is entirely JS-layer driven and does not require an app restart.
+- Theme selection depends on AsyncStorage availability.
+- The runtime expects the four built-in theme IDs to stay stable unless all consumers are updated:
+  - `lightIndustrial`
+  - `darkIndustrial`
+  - `highContrast`
+  - `softNeutral`
+- Screens should consume semantic theme tokens instead of direct color literals for consistent switching.
+
+## 8. Security Status
+
+- Auth is local/factory fallback and is not production-grade.
+- Credentials and session are stored in AsyncStorage.
+- Mobile API calls do not attach auth headers.
 
 Production hardening is required before public deployment.

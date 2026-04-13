@@ -1,279 +1,173 @@
 # Datalogger Mobile App Architecture
 
-Last reviewed: 2026-03-05
+Last reviewed: 2026-04-13
 
-## 1. Tech Stack
+## 1. Overview
 
-- React Native `0.83.1`, React `19.2.0`
-- Navigation:
-  - `@react-navigation/native`
-  - `@react-navigation/native-stack`
-  - `@react-navigation/bottom-tabs`
-- Data visualization:
-  - `react-native-chart-kit`
-  - `react-native-svg`
-- Storage:
-  - `@react-native-async-storage/async-storage`
-- BLE:
-  - `react-native-ble-plx`
-- Export/share:
-  - `react-native-fs`
-  - `react-native-share`
-- UI foundation:
-  - design tokens and responsive helpers in `src/theme/`
-  - reusable UI primitives in `src/components/ui/`
+`Datalogger` is a React Native app for BIOT telemetry monitoring with:
 
-## 2. Runtime Entry and Navigation
+- live and history charts
+- device health dashboard
+- alarm table
+- CSV export
+- BLE runtime and factory configuration
+- a runtime theme system with four selectable themes
+- shared themed UI primitives in `src/components/ui/`
 
-1. `App.tsx` wraps app with `SafeAreaProvider` and mounts `AppNavigator`.
-2. `AppNavigator` routes:
-   - `Animation` (initial)
-   - `Auth` (`AuthStack`)
-   - `Main` (`MainStack`)
+## 2. Runtime Entry and Providers
+
+1. `App.tsx` wraps the app with:
+   - `SafeAreaProvider`
+   - `AppThemeProvider`
+   - `AppNavigator`
+2. `AppNavigator` is the root stack and starts at `Animation`.
 3. `AnimationScreen`:
-   - runs splash animation
-   - prefetches fast device status (`prefetchFastDeviceStatus`)
+   - runs the startup animation
+   - prefetches fast device status
    - checks `getSession()`
-   - routes to `Main` if session exists, else `Auth`
+   - routes to `Main` when a session exists, otherwise `Auth`
 
-### Stack and tab structure
+## 3. Navigation Structure
 
-- `AuthStack` starts at `Login` and includes full app routes.
-- `MainStack` starts at `Home` (which points to `TabNavigator`) and includes full app routes.
-- `TabNavigator` routes:
-  - `Dashboard`, `Home`, `Data`, `Graph`, `Alarm`, `More`
-- Native tab bar is hidden (`tabBar={() => null}`), each screen renders custom bottom wave nav UI.
-
-### Navigation helper behavior
-
-- `navigateToTabRoute` resolves tab routes across nested navigators.
-- `logoutToAuthRoot` attempts stack reset to `Auth`; falls back to navigate `Auth`.
-
-## 3. API and Data Layer
-
-Implemented in `src/api/dataService.js`.
-
-### Endpoint
-
-- Base: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com`
-- Path: `/prod`
-- Full: `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
-
-### Timeouts and cache
-
-- Default request timeout: `60000` ms
-- Fast status timeout: `5000` ms
-- Fast status in-memory cache max age: `30000` ms
-
-### Key service functions
-
-- `fetchDashboardData(options)`:
-  - GET request with optional query
-  - parses Lambda proxy or direct JSON
-  - normalizes arrays for `IoTReadings`, `RealTimeDataMonitor`, `ESP32_Alarms`
-  - exposes pagination metadata (`ioTReadingsNextToken`, `ioTReadingsHasMore`)
-- `fetchAllIoTReadings({ deviceId, startTsEpochMs, endTsEpochMs, maxPages })`:
-  - paged history retrieval
-  - deduplicates rows by identity
-  - returns completeness metadata (`stopReason`, `potentiallyIncomplete`)
-- `fetchRealTimeDataMonitor(options)`:
-  - merges realtime rows with IoT fallback by `deviceId`
-  - returns BIOT-valid rows only
-- `fetchData(options)`:
-  - combined BIOT rows for list/card views
-- `fetchFastDeviceStatus(options)`:
-  - tries `statusOnly=1` query first, falls back to `fetchData`
-  - updates in-memory warm cache
-- `prefetchFastDeviceStatus(options)`:
-  - dedupes concurrent prefetch calls during startup
-- `fetchESP32Alarms(options)`:
-  - returns normalized `ESP32_Alarms`
-
-### Normalization strategy
-
-- Supports Lambda proxy body string and direct object responses.
-- Unmarshals DynamoDB attribute-value format (`S`, `N`, `BOOL`, `NULL`, `M`, `L`).
-- Flattens `payload` onto root record.
-- Normalizes `parameters[]` with `alarm`, `order`, `unit`, `showOnCard`.
-- Derives canonical fields:
-  - `temperature`
-  - `humidity`
-  - `wifi_strength`
-  - `Common Alarm`
-  - `tsServerMs`, `tsDeviceMs`, `ts`
-- Filters BIOT telemetry via `_schemaValid`.
-
-## 4. Device Health Classification
-
-Implemented in `src/utils/deviceHealth.js`.
-
-- Base threshold: `OFFLINE_AFTER_MS = 30000`
-- Dynamic threshold selection:
-  - explicit `offlineAfterMs` if present
-  - else publish/report interval x5
-  - clamp range `30000..180000` ms
-- `computeIsOnline`:
-  - prefers timestamp freshness (`tsServerMs`, `ts`, `tsDeviceMs`, `tsEpochMs`)
-  - falls back to explicit `online` only if timestamp missing
-- `hasCommonIssue`:
-  - checks `status.overallAlarm` aliases and legacy common-alarm fields
-- `classifyDeviceHealth`:
-  - `good` = online and no common issue
-  - `issue` = offline or common issue
-
-## 5. Screen-Level Functional Architecture
-
-### Dashboard
-
-- Uses fast status API path with warm cache.
-- Poll interval: 5 seconds.
-- Health summary cards and pie chart.
-- Card press routes to `Home` with filters.
-
-### Home
-
-- Uses fast status API path with warm cache.
-- Poll interval: 5 seconds.
-- Device filters: all/good/issue.
-- Card action buttons:
+- Root routes:
+  - `Animation`
+  - `Auth`
+  - `Main`
+- `AuthStack` starts at `Login` and includes auth plus app routes.
+- `MainStack` starts at `Home` and includes app routes for existing sessions.
+- Both stacks include:
+  - `Graph`
+  - `Alarm`
+  - `More`
   - `GraphShow`
   - `Export`
-  - native share payload
-- Supports generic BIOT parameters, press amps, and env fallback.
+  - `Notifications`
+  - `AboutApp`
+  - `HelpSupport`
+  - `Sidebar`
+  - `Settings`
+  - `Themes`
+  - `FactorySettings`
+  - `Profile`
+  - `EditProfile`
+- `TabNavigator` contains the logical tab routes:
+  - `Dashboard`, `Home`, `Data`, `Graph`, `Alarm`, `More`
+- Native tab UI is hidden with `tabBar={() => null}`.
+- Runtime screens render `ModernBottomNav` as the visible bottom navigation.
+- `BottomWaveNav` remains as a compatibility wrapper that delegates to `ModernBottomNav`.
 
-### Graph
+## 4. Theme and UI Architecture
 
-- Mode toggle: `live` / `history`.
-- Live:
-  - polls every 5 seconds via `fetchRealTimeDataMonitor`
-  - tracks per-device trend series, capped to 100 points
-- History:
-  - date-range query via `fetchAllIoTReadings` (start-of-day to end-of-day, inclusive)
-  - optional device filter via `historyDeviceId`
-  - filters with `tsEpochMs` range boundaries
-  - if all-device query returns no matches, retries device-scoped history fetches
-  - per-device trend series, capped to 100 points
+- Theme provider:
+  - `src/theme/ThemeContext.js`
+- Theme definition source:
+  - `src/theme/themes.js`
+- Persisted theme key:
+  - `@app_theme_v1`
+- Built-in theme IDs:
+  - `lightIndustrial`
+  - `darkIndustrial`
+  - `highContrast`
+  - `softNeutral`
+- Shared global tokens:
+  - `colors`
+  - `spacing`
+  - `radius`
+  - `shadows`
+  - `typography`
+  - `motion`
+- Shared UI primitives:
+  - `ModernTopHeader`
+  - `ModernBottomNav`
+  - `SurfaceCard`
+  - `ThemedButton`
+  - `ThemedInput`
+  - `ScreenContainer`
+  - `NoticeBanner`
+  - `StatusChip`
+- Settings exposes appearance through:
+  - `More` -> `Settings` -> `Themes`
 
-### GraphShow
+## 5. Data Layer
 
-- Device-specific trend view.
-- Live mode:
-  - polls every 5 seconds
-  - appends new points only when timestamp changes
-  - caps points to 100
-- History mode:
-  - date-range query via `fetchAllIoTReadings`
-  - filters by selected `deviceId` and `tsEpochMs` range
+All AWS API logic is centralized in `src/api/dataService.js`.
 
-### Export
+- Endpoint:
+  - `https://cg5h2ba15i.execute-api.ap-south-1.amazonaws.com/prod`
+- Request timeout:
+  - default `60000` ms
+  - fast status path `5000` ms
+- Fast status cache:
+  - in-memory, max age `30000` ms
+- Reads only:
+  - no mobile write API calls to AWS
 
-- Date-range export, optional `deviceId` filter.
-- Uses `fetchAllIoTReadings`.
-- Builds dynamic CSV columns from BIOT `parameters`.
-- Includes `OverallAlarm`, `WifiStrength`, `Timestamp`, `Date Time`.
-- Writes CSV to cache and opens share/save sheet.
-- Android direct copy to Downloads attempted; fallback to share flow.
+Core service functions:
 
-### Alarm
+- `fetchDashboardData`
+- `fetchData`
+- `fetchRealTimeDataMonitor`
+- `fetchFastDeviceStatus`
+- `prefetchFastDeviceStatus`
+- `fetchAllIoTReadings`
+- `fetchESP32Alarms`
 
-- Refresh while focused every 1 second.
-- Source priority:
-  1. `fetchESP32Alarms()`
-  2. synthesized alarms from `IoTReadings`
-  3. local AsyncStorage alarms (`alarmStorage`)
+Normalization behavior:
 
-### Settings (BLE runtime config)
+- supports Lambda proxy `body` and direct JSON
+- unmarshals DynamoDB typed attributes
+- flattens `payload`
+- normalizes BIOT `parameters[]`
+- derives `tsServerMs`, `tsDeviceMs`, and `ts`
+- marks BIOT-valid rows with `_schemaValid`
 
-- Scan/connect/disconnect BLE devices.
-- Read all params snapshot.
-- Write:
-  - Param 1 epoch (u64)
-  - Param 2-5 threshold pairs (u16 lower/upper)
-  - Param 6-9 multipliers (float32)
-- Monitors:
-  - status characteristic
-  - all-params snapshot characteristic
-  - live telemetry characteristic
+## 6. Polling Model
 
-### FactorySettings (BLE protected config)
+- Home: `5000` ms
+- Dashboard: `5000` ms
+- Graph live mode: `5000` ms
+- GraphShow live mode: `5000` ms
+- Alarm while focused: `1000` ms
+- Settings mobile clock display: `1000` ms
 
-- Unlock password: `blackstar`.
-- Scan/connect/disconnect BLE device.
-- Read/update Device ID characteristic.
-- Send Wi-Fi SSID/password characteristics.
+## 7. BLE Architecture
 
-### Other screens
+Runtime settings in `SettingsScreen`:
 
-- `Login`: local/factory auth then save session.
-- `SignUp`: stores local user/session only when password confirmed; navigates to Home either way.
-- `Notification`: toggle persisted to AsyncStorage key `@notification_enabled_v1`.
-- `Profile`/`EditProfile`: local in-memory profile edit callback.
-- `HelpSupport`: external links (phone, web, mail).
-- `AboutApp`: static text.
-- `DeviceInformation`: mock/static screen.
-- `SplashScreen`: present but not used as entry route.
+- scan/connect/disconnect BLE devices
+- read all-parameter snapshot
+- write param `1..9`
+- set device time from mobile clock
+- read/write device name
+- read/write recipient email
+- monitor status, snapshot updates, and live telemetry
 
-## 6. Persistence and Auth
+Protected factory settings in `FactorySettingsScreen`:
 
-- `userStorage.js`:
-  - user key: `@user_credentials_v1`
-  - session key: `@user_session_v1`
-- `authService.js`:
-  - factory credentials: `Company_A / 1234`
-  - fallback to locally saved user
-- `alarmStorage.js`:
-  - key: `@alarm_logs_v1`
-  - max 500 rows
-  - IST timestamp formatting helper
+- unlock password gate: `blackstar`
+- scan/connect/disconnect BLE devices
+- read/update device ID
+- write Wi-Fi SSID/password
+- read/write factory sender email and app password
 
-## 7. BLE Contract
+## 8. Storage and Auth
 
-Defined in `src/ble/bleContract.js`.
+- `userStorage.js`
+  - `@user_credentials_v1`
+  - `@user_session_v1`
+- `alarmStorage.js`
+  - `@alarm_logs_v1`
+- `NotificationScreen`
+  - `@notification_enabled_v1`
+- `ThemeContext`
+  - `@app_theme_v1`
+- `authService.js`
+  - factory credentials `Company_A / 1234`
+  - fallback local user validation
 
-- Device name: `BIOT`
-- Service UUID root: `8d4d3c10-2a4c-4d1f-9b3a-6f0012340000`
-- Characteristics:
-  - params `0001..0009`
-  - deviceId `00f9`
-  - wifiPassword `00fa`
-  - wifiSsid `00fb`
-  - liveTelemetry `00fd`
-  - status `00fe`
-  - allParams `00ff`
+## 9. Current Runtime Notes
 
-Codec in `src/ble/bleCodec.js` handles base64 and binary payload encoding/decoding.
-
-## 8. Native Platform Configuration
-
-### Android
-
-- Min SDK: 24, Target/Compile SDK: 36
-- Hermes: enabled
-- New Architecture: enabled
-- Permissions in manifest:
-  - `INTERNET`
-  - legacy Bluetooth + location (`maxSdkVersion=30`)
-  - `BLUETOOTH_SCAN`
-  - `BLUETOOTH_CONNECT`
-
-### iOS
-
-- Deployment target: 15.1
-- Info.plist includes:
-  - `NSBluetoothAlwaysUsageDescription`
-  - `NSBluetoothPeripheralUsageDescription`
-  - `NSLocationWhenInUseUsageDescription`
-  - ATS with `NSAllowsArbitraryLoads=false`, `NSAllowsLocalNetworking=true`
-
-## 9. Legacy and Non-Primary Code
-
-- `src/screens_1/` is legacy UI code and not part of active navigators.
-- Root docs should treat `src/screens/` as runtime source of truth.
-
-## 10. Current Risks / Gaps
-
-- Local auth and plain AsyncStorage are not production-grade security.
-- API URL is hardcoded in app code.
-- Periodic polling still impacts battery/data (5s for Home/Dashboard/Graph/GraphShow, 1s focused refresh on Alarm).
-- `SignUp` currently navigates to Home even when data is invalid.
-- Mixed static/demo screens remain in runtime stacks (`DeviceInformation`, `PageFirst`).
+- `DataScreen` is still part of active navigation, but it is not one of the five primary bottom-nav buttons.
+- `DeviceInformationScreen` exists and is currently mock/static.
+- `SplashScreen.js` exists, but the active startup entry route is `AnimationScreen`.
+- `src/screens_1/` is legacy and excluded from active runtime behavior.
