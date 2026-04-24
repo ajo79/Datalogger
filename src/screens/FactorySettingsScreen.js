@@ -23,7 +23,6 @@ import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 const FACTORY_UNLOCK_PASSWORD = "blackstar";
 const SCAN_TIMEOUT_MS = 12000;
 const MASKED_EMAIL_PASSWORD = "********";
-const DEVICE_NAME_MAX_LENGTH = 63;
 
 function getBleDeviceDisplayName(device) {
   const name = device?.name || device?.localName || BLE_DEVICE_NAME;
@@ -54,10 +53,7 @@ export default function FactorySettingsScreen({ navigation }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [scannedDevices, setScannedDevices] = useState([]);
 
-  const [wifiSsid, setWifiSsid] = useState("");
-  const [wifiPassword, setWifiPassword] = useState("");
   const [deviceIdValue, setDeviceIdValue] = useState("");
-  const [deviceNameValue, setDeviceNameValue] = useState("");
   const [emailSender, setEmailSender] = useState("");
   const [emailAppPassword, setEmailAppPassword] = useState("");
   const [busyEmailField, setBusyEmailField] = useState(null);
@@ -114,41 +110,38 @@ export default function FactorySettingsScreen({ navigation }) {
     connectedDeviceRef.current = null;
     setDeviceLabel("Disconnected");
     setDeviceIdValue("");
-    setDeviceNameValue("");
     setIsConnecting(false);
     setIsDisconnecting(false);
     setIsSending(false);
     setBusyEmailField(null);
   }, []);
 
-  const readDeviceIdentityFromBle = useCallback(
+  const readDeviceIdFromBle = useCallback(
     async (deviceOverride = null, { silent = false } = {}) => {
       const device = deviceOverride || connectedDeviceRef.current;
       if (!device) {
         if (!silent) {
           Alert.alert("BLE", "Connect to a BLE device first.");
         }
-        return { deviceId: "", deviceName: "" };
+        return { deviceId: "" };
       }
 
       try {
-        const [idCharacteristic, nameCharacteristic] = await Promise.all([
-          device.readCharacteristicForService(BLE_SERVICE_UUID, BLE_CHAR_UUIDS.deviceId),
-          device.readCharacteristicForService(BLE_SERVICE_UUID, BLE_CHAR_UUIDS.deviceName),
-        ]);
+        const idCharacteristic = await device.readCharacteristicForService(
+          BLE_SERVICE_UUID,
+          BLE_CHAR_UUIDS.deviceId
+        );
         const currentId = decodeUtf8Text(idCharacteristic?.value || "").trim();
-        const currentName = decodeUtf8Text(nameCharacteristic?.value || "").trim();
         setDeviceIdValue(currentId);
-        setDeviceNameValue(currentName);
         if (!silent) {
-          pushStatus(`Current identity - ID: ${currentId || "-"}, Name: ${currentName || "-"}`);
+          pushStatus(`Current Device ID: ${currentId || "-"}`);
         }
-        return { deviceId: currentId, deviceName: currentName };
+        return { deviceId: currentId };
       } catch (e) {
         if (!silent) {
-          Alert.alert("Read failed", e?.message || "Unable to read device identity.");
+          Alert.alert("Read failed", e?.message || "Unable to read Device ID.");
         }
-        return { deviceId: "", deviceName: "" };
+        return { deviceId: "" };
       }
     },
     [pushStatus]
@@ -275,7 +268,7 @@ export default function FactorySettingsScreen({ navigation }) {
         setDeviceLabel(getBleDeviceDisplayName(ready));
         setIsDeviceDropdownOpen(false);
         pushStatus(`Connected to ${getBleDeviceDisplayName(ready)}`);
-        await readDeviceIdentityFromBle(ready, { silent: true });
+        await readDeviceIdFromBle(ready, { silent: true });
         await readFactoryEmailConfig(ready, { silent: true });
 
         clearDisconnectListener();
@@ -302,7 +295,7 @@ export default function FactorySettingsScreen({ navigation }) {
       isDisconnecting,
       pushStatus,
       readFactoryEmailConfig,
-      readDeviceIdentityFromBle,
+      readDeviceIdFromBle,
     ]
   );
 
@@ -419,85 +412,6 @@ export default function FactorySettingsScreen({ navigation }) {
       setIsSending(false);
     }
   }, [deviceIdValue, isUnlocked, pushStatus]);
-
-  const sendDeviceName = useCallback(async () => {
-    if (!isUnlocked) {
-      Alert.alert("Access denied", "Unlock factory settings first.");
-      return;
-    }
-
-    const device = connectedDeviceRef.current;
-    if (!device) {
-      Alert.alert("BLE", "Connect to a BLE device first.");
-      return;
-    }
-
-    const nextName = deviceNameValue.trim();
-    if (!nextName) {
-      Alert.alert("Missing data", "Device Name is required.");
-      return;
-    }
-    if (nextName.length > DEVICE_NAME_MAX_LENGTH) {
-      Alert.alert("Too long", `Device Name must be ${DEVICE_NAME_MAX_LENGTH} characters or less.`);
-      return;
-    }
-
-    setIsSending(true);
-    try {
-      await device.writeCharacteristicWithResponseForService(
-        BLE_SERVICE_UUID,
-        BLE_CHAR_UUIDS.deviceName,
-        encodeUtf8Text(nextName)
-      );
-      setDeviceNameValue(nextName);
-      pushStatus(`Device Name updated: ${nextName}`);
-      Alert.alert("Success", `Device Name updated to ${nextName}.`);
-    } catch (e) {
-      Alert.alert("Send failed", e?.message || "Unable to update Device Name.");
-    } finally {
-      setIsSending(false);
-    }
-  }, [deviceNameValue, isUnlocked, pushStatus]);
-
-  const sendWifiCredentials = useCallback(async () => {
-    if (!isUnlocked) {
-      Alert.alert("Access denied", "Unlock factory settings first.");
-      return;
-    }
-
-    const device = connectedDeviceRef.current;
-    if (!device) {
-      Alert.alert("BLE", "Connect to a BLE device first.");
-      return;
-    }
-
-    const ssid = wifiSsid;
-    const pwd = wifiPassword;
-    if (!ssid.trim() || pwd.length === 0) {
-      Alert.alert("Missing data", "Both Wi-Fi SSID and password are required.");
-      return;
-    }
-
-    setIsSending(true);
-    try {
-      await device.writeCharacteristicWithResponseForService(
-        BLE_SERVICE_UUID,
-        BLE_CHAR_UUIDS.wifiSsid,
-        encodeUtf8Text(ssid)
-      );
-      await device.writeCharacteristicWithResponseForService(
-        BLE_SERVICE_UUID,
-        BLE_CHAR_UUIDS.wifiPassword,
-        encodeUtf8Text(pwd)
-      );
-      pushStatus("Wi-Fi credentials sent to device");
-      Alert.alert("Success", "Wi-Fi credentials sent to ESP32.");
-    } catch (e) {
-      Alert.alert("Send failed", e?.message || "Unable to send Wi-Fi credentials.");
-    } finally {
-      setIsSending(false);
-    }
-  }, [isUnlocked, pushStatus, wifiPassword, wifiSsid]);
 
   const handleUnlock = useCallback(() => {
     if (accessPassword === FACTORY_UNLOCK_PASSWORD) {
@@ -651,19 +565,10 @@ export default function FactorySettingsScreen({ navigation }) {
                 placeholder="Device ID (BLE name)"
                 autoCapitalize="characters"
               />
-              <Text style={[styles.fieldHeading, styles.inputLabelSpacing]}>Device Name</Text>
-              <TextInput
-                style={styles.input}
-                value={deviceNameValue}
-                onChangeText={setDeviceNameValue}
-                placeholder="Device Name (max 63 chars)"
-                autoCapitalize="words"
-                maxLength={DEVICE_NAME_MAX_LENGTH}
-              />
               <View style={styles.rowButtons}>
                 <TouchableOpacity
                   style={[styles.secondaryBtn, styles.actionBtn]}
-                  onPress={() => readDeviceIdentityFromBle()}
+                  onPress={() => readDeviceIdFromBle()}
                   disabled={!isConnected || isSending || isDisconnecting}
                 >
                   <Text style={styles.secondaryBtnText}>Read</Text>
@@ -680,56 +585,8 @@ export default function FactorySettingsScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={sendDeviceName}
-                disabled={!isConnected || isSending || isDisconnecting}
-              >
-                {isSending ? (
-                  <ActivityIndicator color={theme.colors.buttonPrimaryText} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Update Name</Text>
-                )}
-              </TouchableOpacity>
               <Text style={styles.helperText}>
-                Device ID controls BLE advertising identity. Device Name is sent in telemetry payloads.
-              </Text>
-            </View>
-
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Wi-Fi Credentials</Text>
-              <Text style={styles.fieldHeading}>Wi-Fi SSID</Text>
-              <TextInput
-                style={styles.input}
-                value={wifiSsid}
-                onChangeText={setWifiSsid}
-                placeholder="SSID ID"
-                placeholderTextColor={theme.colors.inputPlaceholder}
-                autoCapitalize="none"
-              />
-              <Text style={styles.fieldHeading}>Wi-Fi Password</Text>
-              <TextInput
-                style={styles.input}
-                value={wifiPassword}
-                onChangeText={setWifiPassword}
-                placeholder="password"
-                placeholderTextColor={theme.colors.inputPlaceholder}
-                secureTextEntry
-                autoCapitalize="none"
-              />
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={sendWifiCredentials}
-                disabled={!isConnected || isSending || isDisconnecting}
-              >
-                {isSending ? (
-                  <ActivityIndicator color={theme.colors.buttonSecondaryText} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Send To Device</Text>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.helperText}>
-                Writes SSID and password to ESP32 using BLE characteristics.
+                Device ID controls BLE advertising identity.
               </Text>
             </View>
 

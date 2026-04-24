@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { BleManager } from "react-native-ble-plx";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 import IMAGES from "../constants/images";
 import {
   BLE_CHAR_UUIDS,
@@ -64,8 +65,139 @@ const multiplierDefs = [
   { id: 9, title: "Multiplier 4", key: "param9" },
 ];
 
+const defaultShiftForm = {
+  shift1Start: "",
+  shift1End: "",
+  shift2Start: "",
+  shift2End: "",
+  shift3Start: "",
+  shift3End: "",
+};
+
+const shiftScheduleDefs = [
+  { id: 1, title: "Shift 1", startKey: "shift1Start", endKey: "shift1End", charUuidKey: "shift1Time" },
+  { id: 2, title: "Shift 2", startKey: "shift2Start", endKey: "shift2End", charUuidKey: "shift2Time" },
+  { id: 3, title: "Shift 3", startKey: "shift3Start", endKey: "shift3End", charUuidKey: "shift3Time" },
+];
+
+const shiftFieldLabels = {
+  shift1Start: "Shift 1 Start Time",
+  shift1End: "Shift 1 End Time",
+  shift2Start: "Shift 2 Start Time",
+  shift2End: "Shift 2 End Time",
+  shift3Start: "Shift 3 Start Time",
+  shift3End: "Shift 3 End Time",
+};
+
+function buildEmptyShiftFieldErrors() {
+  return {
+    shift1Start: "",
+    shift1End: "",
+    shift2Start: "",
+    shift2End: "",
+    shift3Start: "",
+    shift3End: "",
+  };
+}
+
 function getCurrentEpochSeconds() {
   return Math.floor(Date.now() / 1000);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function formatMinutesTo24h(minutes) {
+  const total = Number(minutes);
+  if (!Number.isInteger(total) || total < 0 || total > 1439) {
+    throw new Error("Time value must be within 00:00 to 23:59.");
+  }
+  const hour = Math.floor(total / 60);
+  const minute = total % 60;
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+function formatShiftPayload24h(startMin, endMin) {
+  return `${formatMinutesTo24h(startMin)}-${formatMinutesTo24h(endMin)}`;
+}
+
+function formatMinutesTo12h(minutes) {
+  const total = Number(minutes);
+  if (!Number.isInteger(total) || total < 0 || total > 1439) {
+    return "";
+  }
+  const hour24 = Math.floor(total / 60);
+  const minute = total % 60;
+  const ampm = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = (hour24 % 12) || 12;
+  return `${hour12}:${pad2(minute)} ${ampm}`;
+}
+
+function parse12hTime(value, label) {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  const match = raw.match(/^(0?[1-9]|1[0-2])\s*:\s*([0-5]\d)\s*([AP]M)$/i);
+  if (!match) {
+    throw new Error(`${label} must be in h:mm AM/PM format.`);
+  }
+
+  const hour12 = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = match[3].toUpperCase();
+  const hour24 = (hour12 % 12) + (ampm === "PM" ? 12 : 0);
+  return hour24 * 60 + minute;
+}
+
+function normalize12hTimeInput(value, label) {
+  const minutes = parse12hTime(value, label);
+  return {
+    minutes,
+    text: formatMinutesTo12h(minutes),
+  };
+}
+
+function parseShiftPayload24h(payload, label) {
+  const raw = String(payload || "").trim();
+  const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    throw new Error(`${label} payload is invalid. Expected HH:MM-HH:MM.`);
+  }
+
+  const startHour = Number(match[1]);
+  const startMinute = Number(match[2]);
+  const endHour = Number(match[3]);
+  const endMinute = Number(match[4]);
+
+  return {
+    startMin: startHour * 60 + startMinute,
+    endMin: endHour * 60 + endMinute,
+  };
+}
+
+function validateShiftSchedule(windows) {
+  if (!Array.isArray(windows) || windows.length !== 3) {
+    throw new Error("Shift schedule must include exactly 3 shifts.");
+  }
+
+  windows.forEach((window) => {
+    if (window.startMin >= window.endMin) {
+      throw new Error(`${window.title}: start time must be earlier than end time.`);
+    }
+    if (window.startMin < 0 || window.endMin > 1439) {
+      throw new Error(`${window.title}: time must be within 12:00 AM to 11:59 PM.`);
+    }
+  });
+
+  for (let i = 1; i < windows.length; i += 1) {
+    const prev = windows[i - 1];
+    const current = windows[i];
+    if (current.startMin < prev.startMin) {
+      throw new Error(`${current.title} cannot start before ${prev.title}.`);
+    }
+    if (current.startMin < prev.endMin) {
+      throw new Error(`${current.title} overlaps with ${prev.title}.`);
+    }
+  }
 }
 
 function getBleDeviceDisplayName(device) {
@@ -276,6 +408,14 @@ export default function SettingsScreen({ navigation }) {
   const [busyDeviceNameAction, setBusyDeviceNameAction] = useState(null);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [busyRecipientAction, setBusyRecipientAction] = useState(null);
+  const [wifiSsid, setWifiSsid] = useState("");
+  const [wifiPassword, setWifiPassword] = useState("");
+  const [busyWifiAction, setBusyWifiAction] = useState(false);
+  const [shiftForm, setShiftForm] = useState(() => ({ ...defaultShiftForm }));
+  const [shiftFieldErrors, setShiftFieldErrors] = useState(() => buildEmptyShiftFieldErrors());
+  const [busyShiftScheduleAction, setBusyShiftScheduleAction] = useState(null);
+  const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
+  const [activeShiftField, setActiveShiftField] = useState(null);
 
   const telemetryView = (() => {
     if (
@@ -379,6 +519,14 @@ export default function SettingsScreen({ navigation }) {
       setBusyDeviceNameAction(null);
       setRecipientEmail("");
       setBusyRecipientAction(null);
+      setWifiSsid("");
+      setWifiPassword("");
+      setBusyWifiAction(false);
+      setShiftForm({ ...defaultShiftForm });
+      setShiftFieldErrors(buildEmptyShiftFieldErrors());
+      setBusyShiftScheduleAction(null);
+      setIsTimePickerVisible(false);
+      setActiveShiftField(null);
     }
     clearSubscriptions({ removeNative: removeSubscriptions });
     if (removeDisconnectListener) {
@@ -479,6 +627,193 @@ export default function SettingsScreen({ navigation }) {
     const characteristic = await device.readCharacteristicForService(BLE_SERVICE_UUID, charUuid);
     return decodeUtf8Text(characteristic?.value || "").trim();
   }, []);
+
+  const sendWifiCredentials = useCallback(async () => {
+    const device = connectedDeviceRef.current;
+    if (!device) {
+      Alert.alert("BLE", "Connect to BIOT BLE device first.");
+      return;
+    }
+
+    const ssid = wifiSsid;
+    const pwd = wifiPassword;
+    if (!ssid.trim() || pwd.length === 0) {
+      Alert.alert("Missing data", "Both Wi-Fi SSID and password are required.");
+      return;
+    }
+
+    try {
+      setBusyWifiAction(true);
+      await device.writeCharacteristicWithResponseForService(
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUIDS.wifiSsid,
+        encodeUtf8Text(ssid)
+      );
+      await device.writeCharacteristicWithResponseForService(
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUIDS.wifiPassword,
+        encodeUtf8Text(pwd)
+      );
+      pushStatusLine(`${new Date().toLocaleTimeString()} - Wi-Fi credentials sent to device`);
+      Alert.alert("Success", "Wi-Fi credentials sent to ESP32.");
+    } catch (e) {
+      Alert.alert("Send failed", e?.message || "Unable to send Wi-Fi credentials.");
+    } finally {
+      if (!isUnmountingRef.current) {
+        setBusyWifiAction(false);
+      }
+    }
+  }, [pushStatusLine, wifiPassword, wifiSsid]);
+
+  const readShiftSchedule = useCallback(
+    async ({ silent = false } = {}) => {
+      const device = connectedDeviceRef.current;
+      if (!device) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("BLE", "Connect to BIOT BLE device first.");
+        }
+        return false;
+      }
+
+      try {
+        setBusyShiftScheduleAction("read");
+        const nextForm = { ...defaultShiftForm };
+
+        for (const cfg of shiftScheduleDefs) {
+          const payload = await readBleTextCharacteristic(BLE_CHAR_UUIDS[cfg.charUuidKey]);
+          const parsed = parseShiftPayload24h(payload, cfg.title);
+          nextForm[cfg.startKey] = formatMinutesTo12h(parsed.startMin);
+          nextForm[cfg.endKey] = formatMinutesTo12h(parsed.endMin);
+        }
+
+        if (isUnmountingRef.current) return false;
+        setShiftForm(nextForm);
+        setShiftFieldErrors(buildEmptyShiftFieldErrors());
+        pushStatusLine(`${new Date().toLocaleTimeString()} - Shift schedule read`);
+        return true;
+      } catch (e) {
+        if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
+          Alert.alert("Read failed", e?.message || "Unable to read shift schedule.");
+        }
+        return false;
+      } finally {
+        if (!isUnmountingRef.current) {
+          setBusyShiftScheduleAction(null);
+        }
+      }
+    },
+    [pushStatusLine, readBleTextCharacteristic]
+  );
+
+  const normalizeShiftFormValues = useCallback((sourceForm) => {
+    const nextForm = { ...defaultShiftForm };
+    const nextErrors = buildEmptyShiftFieldErrors();
+    const windows = [];
+    let hasFieldError = false;
+
+    for (const cfg of shiftScheduleDefs) {
+      const startLabel = shiftFieldLabels[cfg.startKey] || `${cfg.title} start time`;
+      const endLabel = shiftFieldLabels[cfg.endKey] || `${cfg.title} end time`;
+      const startRaw = String(sourceForm[cfg.startKey] || "").trim();
+      const endRaw = String(sourceForm[cfg.endKey] || "").trim();
+
+      let startMin = null;
+      let endMin = null;
+
+      if (!startRaw) {
+        hasFieldError = true;
+        nextErrors[cfg.startKey] = `${startLabel} is required.`;
+      } else {
+        try {
+          const normalized = normalize12hTimeInput(startRaw, startLabel);
+          startMin = normalized.minutes;
+          nextForm[cfg.startKey] = normalized.text;
+        } catch (e) {
+          hasFieldError = true;
+          nextErrors[cfg.startKey] = e?.message || `${startLabel} is invalid.`;
+          nextForm[cfg.startKey] = startRaw;
+        }
+      }
+
+      if (!endRaw) {
+        hasFieldError = true;
+        nextErrors[cfg.endKey] = `${endLabel} is required.`;
+      } else {
+        try {
+          const normalized = normalize12hTimeInput(endRaw, endLabel);
+          endMin = normalized.minutes;
+          nextForm[cfg.endKey] = normalized.text;
+        } catch (e) {
+          hasFieldError = true;
+          nextErrors[cfg.endKey] = e?.message || `${endLabel} is invalid.`;
+          nextForm[cfg.endKey] = endRaw;
+        }
+      }
+
+      if (Number.isInteger(startMin) && Number.isInteger(endMin)) {
+        windows.push({
+          ...cfg,
+          startMin,
+          endMin,
+        });
+      }
+    }
+
+    return {
+      nextForm,
+      nextErrors,
+      windows,
+      hasFieldError,
+    };
+  }, []);
+
+  const writeShiftSchedule = useCallback(async () => {
+    const device = connectedDeviceRef.current;
+    if (!device) {
+      Alert.alert("BLE", "Connect to BIOT BLE device first.");
+      return;
+    }
+
+    try {
+      const { nextForm, nextErrors, windows, hasFieldError } = normalizeShiftFormValues(shiftForm);
+      setShiftForm(nextForm);
+      setShiftFieldErrors(nextErrors);
+      if (hasFieldError) {
+        throw new Error("Please correct highlighted shift time fields.");
+      }
+      validateShiftSchedule(windows);
+      setBusyShiftScheduleAction("write");
+
+      const orderedWrites = [...windows].sort((a, b) => b.id - a.id);
+      for (const window of orderedWrites) {
+        const payload = formatShiftPayload24h(window.startMin, window.endMin);
+        try {
+          await device.writeCharacteristicWithResponseForService(
+            BLE_SERVICE_UUID,
+            BLE_CHAR_UUIDS[window.charUuidKey],
+            encodeUtf8Text(payload)
+          );
+        } catch (e) {
+          throw new Error(`Failed to write ${window.title}: ${e?.message || "unknown error"}`);
+        }
+      }
+
+      const normalizedForm = { ...defaultShiftForm };
+      windows.forEach((window) => {
+        normalizedForm[window.startKey] = formatMinutesTo12h(window.startMin);
+        normalizedForm[window.endKey] = formatMinutesTo12h(window.endMin);
+      });
+      setShiftForm(normalizedForm);
+      setShiftFieldErrors(buildEmptyShiftFieldErrors());
+      pushStatusLine(`${new Date().toLocaleTimeString()} - Shift schedule saved`);
+    } catch (e) {
+      Alert.alert("Write failed", e?.message || "Unable to update shift schedule.");
+    } finally {
+      if (!isUnmountingRef.current) {
+        setBusyShiftScheduleAction(null);
+      }
+    }
+  }, [normalizeShiftFormValues, pushStatusLine, shiftForm]);
 
   const readDeviceName = useCallback(
     async ({ silent = false } = {}) => {
@@ -655,6 +990,7 @@ export default function SettingsScreen({ navigation }) {
         await readSnapshot();
         await readDeviceName({ silent: true });
         await readRecipientEmail({ silent: true });
+        await readShiftSchedule({ silent: true });
       } catch (e) {
         if (!disconnectingRef.current && !isUnmountingRef.current) {
           Alert.alert("BLE connect failed", e?.message || "Unable to connect.");
@@ -674,6 +1010,7 @@ export default function SettingsScreen({ navigation }) {
       readDeviceName,
       pushStatusLine,
       readRecipientEmail,
+      readShiftSchedule,
       readSnapshot,
     ]
   );
@@ -782,6 +1119,86 @@ export default function SettingsScreen({ navigation }) {
   const setField = useCallback((key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const setShiftField = useCallback((key, value) => {
+    setShiftForm((prev) => ({ ...prev, [key]: value }));
+    setShiftFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      return { ...prev, [key]: "" };
+    });
+  }, []);
+
+  const normalizeShiftFieldOnBlur = useCallback(
+    (fieldKey) => {
+      const label = shiftFieldLabels[fieldKey] || "Shift time";
+      const raw = String(shiftForm[fieldKey] || "").trim();
+      if (!raw) {
+        setShiftForm((prev) => ({ ...prev, [fieldKey]: "" }));
+        setShiftFieldErrors((prev) => ({ ...prev, [fieldKey]: `${label} is required.` }));
+        return;
+      }
+
+      try {
+        const normalized = normalize12hTimeInput(raw, label);
+        setShiftForm((prev) => ({ ...prev, [fieldKey]: normalized.text }));
+        setShiftFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }));
+      } catch (e) {
+        setShiftForm((prev) => ({ ...prev, [fieldKey]: raw }));
+        setShiftFieldErrors((prev) => ({
+          ...prev,
+          [fieldKey]: e?.message || `${label} is invalid.`,
+        }));
+      }
+    },
+    [shiftForm]
+  );
+
+  const openShiftTimePicker = useCallback((fieldKey) => {
+    setActiveShiftField(fieldKey);
+    setIsTimePickerVisible(true);
+  }, []);
+
+  const closeShiftTimePicker = useCallback(() => {
+    setIsTimePickerVisible(false);
+    setActiveShiftField(null);
+  }, []);
+
+  const shiftPickerInitialDate = useMemo(() => {
+    const fallback = new Date();
+    fallback.setSeconds(0, 0);
+    if (!activeShiftField) {
+      return fallback;
+    }
+
+    const fieldValue = String(shiftForm[activeShiftField] || "").trim();
+    if (!fieldValue) {
+      return fallback;
+    }
+
+    try {
+      const minutes = parse12hTime(fieldValue, shiftFieldLabels[activeShiftField] || "Shift time");
+      const nextDate = new Date();
+      nextDate.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      return nextDate;
+    } catch {
+      return fallback;
+    }
+  }, [activeShiftField, shiftForm]);
+
+  const onShiftTimePickerConfirm = useCallback(
+    (selectedDate) => {
+      if (!activeShiftField) {
+        closeShiftTimePicker();
+        return;
+      }
+      const minutes = selectedDate.getHours() * 60 + selectedDate.getMinutes();
+      const normalized = formatMinutesTo12h(minutes);
+      setShiftForm((prev) => ({ ...prev, [activeShiftField]: normalized }));
+      setShiftFieldErrors((prev) => ({ ...prev, [activeShiftField]: "" }));
+      closeShiftTimePicker();
+    },
+    [activeShiftField, closeShiftTimePicker]
+  );
 
   const writeParamBase64 = useCallback(async (paramId, base64Payload) => {
     const device = connectedDeviceRef.current;
@@ -920,7 +1337,7 @@ export default function SettingsScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ModernTopHeader
-        title="BLE SETTING"
+        title="SETTINGS"
         leftIcon={IMAGES.MoreTop}
         onLeftPress={openMenu}
         rightIcon={IMAGES.SettingIcon}
@@ -1048,6 +1465,47 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Wi-Fi Credentials</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.fieldHeading}>Wi-Fi SSID</Text>
+            <TextInput
+              style={styles.settingInputStandalone}
+              value={wifiSsid}
+              onChangeText={setWifiSsid}
+              placeholder="SSID ID"
+              placeholderTextColor={theme.colors.inputPlaceholder}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.fieldHeading}>Wi-Fi Password</Text>
+            <TextInput
+              style={styles.settingInputStandalone}
+              value={wifiPassword}
+              onChangeText={setWifiPassword}
+              placeholder="password"
+              placeholderTextColor={theme.colors.inputPlaceholder}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            <TouchableOpacity
+              style={[styles.setBtn, styles.primaryBtn, styles.fullWidthActionBtn]}
+              onPress={sendWifiCredentials}
+              disabled={!isConnected || isDisconnecting || busyWifiAction}
+            >
+              {busyWifiAction ? (
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
+              ) : (
+                <Text style={styles.setBtnText}>Send To Device</Text>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.infoLine}>Writes SSID and password to ESP32 using BLE characteristics.</Text>
+          </View>
+        </View>
+
+        <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
             <Text style={styles.panelHeaderText}>Date Time Sync</Text>
           </View>
           <View style={styles.panelBody}>
@@ -1144,6 +1602,108 @@ export default function SettingsScreen({ navigation }) {
             </View>
           </View>
         ))}
+
+        <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Shift Schedule</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.infoLine}>BLE: shift windows (...00f4, ...00f3, ...00f2)</Text>
+
+            <TouchableOpacity
+              style={[styles.setBtn, styles.secondaryBtn, styles.readEmailBtn]}
+              onPress={() => readShiftSchedule()}
+              disabled={!isConnected || isDisconnecting || busyShiftScheduleAction !== null}
+            >
+              {busyShiftScheduleAction === "read" ? (
+                <ActivityIndicator color={theme.colors.buttonSecondaryText} />
+              ) : (
+                <Text style={styles.readEmailBtnText}>READ SHIFTS</Text>
+              )}
+            </TouchableOpacity>
+
+            {shiftScheduleDefs.map((cfg) => (
+              <View key={cfg.id}>
+                <Text style={styles.fieldHeading}>{cfg.title}</Text>
+                <View style={styles.shiftRow}>
+                  <View style={styles.shiftValueGroup}>
+                    <Text style={styles.valueLabel}>Start:</Text>
+                    <View style={styles.shiftFieldColumn}>
+                      <View style={styles.shiftInputRow}>
+                        <TextInput
+                          style={[
+                            styles.settingInput,
+                            shiftFieldErrors[cfg.startKey] ? styles.settingInputError : null,
+                          ]}
+                          value={shiftForm[cfg.startKey]}
+                          onChangeText={(txt) => setShiftField(cfg.startKey, txt)}
+                          onBlur={() => normalizeShiftFieldOnBlur(cfg.startKey)}
+                          placeholder="8:00 AM"
+                          placeholderTextColor={theme.colors.inputPlaceholder}
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                          style={[styles.pickBtn, styles.secondaryBtn]}
+                          onPress={() => openShiftTimePicker(cfg.startKey)}
+                          disabled={isDisconnecting || busyShiftScheduleAction !== null}
+                        >
+                          <Text style={styles.pickBtnText}>Pick</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {shiftFieldErrors[cfg.startKey] ? (
+                        <Text style={styles.fieldErrorText}>{shiftFieldErrors[cfg.startKey]}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  <View style={styles.shiftValueGroup}>
+                    <Text style={styles.valueLabel}>End:</Text>
+                    <View style={styles.shiftFieldColumn}>
+                      <View style={styles.shiftInputRow}>
+                        <TextInput
+                          style={[
+                            styles.settingInput,
+                            shiftFieldErrors[cfg.endKey] ? styles.settingInputError : null,
+                          ]}
+                          value={shiftForm[cfg.endKey]}
+                          onChangeText={(txt) => setShiftField(cfg.endKey, txt)}
+                          onBlur={() => normalizeShiftFieldOnBlur(cfg.endKey)}
+                          placeholder="1:00 PM"
+                          placeholderTextColor={theme.colors.inputPlaceholder}
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                          style={[styles.pickBtn, styles.secondaryBtn]}
+                          onPress={() => openShiftTimePicker(cfg.endKey)}
+                          disabled={isDisconnecting || busyShiftScheduleAction !== null}
+                        >
+                          <Text style={styles.pickBtnText}>Pick</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {shiftFieldErrors[cfg.endKey] ? (
+                        <Text style={styles.fieldErrorText}>{shiftFieldErrors[cfg.endKey]}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ))}
+
+            <TouchableOpacity
+              style={[styles.setBtn, styles.primaryBtn]}
+              onPress={writeShiftSchedule}
+              disabled={!isConnected || isDisconnecting || busyShiftScheduleAction !== null}
+            >
+              {busyShiftScheduleAction === "write" ? (
+                <ActivityIndicator color={theme.colors.buttonPrimaryText} />
+              ) : (
+                <Text style={styles.setBtnText}>SAVE ALL</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
@@ -1265,6 +1825,15 @@ export default function SettingsScreen({ navigation }) {
           )}
         </View>
       </ScrollView>
+
+      <DateTimePickerModal
+        isVisible={isTimePickerVisible}
+        mode="time"
+        date={shiftPickerInitialDate}
+        is24Hour={false}
+        onConfirm={onShiftTimePickerConfirm}
+        onCancel={closeShiftTimePicker}
+      />
 
       <ModernBottomNav
         navigation={navigation}
@@ -1442,11 +2011,32 @@ function createStyles(theme) {
       justifyContent: "space-between",
       columnGap: 12,
     },
+    shiftRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      columnGap: 12,
+      marginBottom: 8,
+    },
     valueGroup: {
       flex: 1,
       flexDirection: "row",
       alignItems: "center",
       columnGap: 6,
+    },
+    shiftValueGroup: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      columnGap: 6,
+    },
+    shiftFieldColumn: {
+      flex: 1,
+    },
+    shiftInputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 8,
     },
     valueLabel: {
       fontSize: 16,
@@ -1464,6 +2054,30 @@ function createStyles(theme) {
       color: theme.colors.inputText,
       backgroundColor: theme.colors.inputBackground,
       flex: 1,
+    },
+    settingInputError: {
+      borderColor: theme.colors.danger || "#d14343",
+    },
+    fieldErrorText: {
+      color: theme.colors.danger || "#d14343",
+      fontSize: 11,
+      marginTop: 4,
+    },
+    pickBtn: {
+      marginTop: 0,
+      alignSelf: "auto",
+      minWidth: 56,
+      minHeight: 34,
+      borderRadius: 14,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 10,
+    },
+    pickBtnText: {
+      color: theme.colors.buttonSecondaryText,
+      fontWeight: "700",
+      fontSize: 12,
+      letterSpacing: 0.2,
     },
     setBtn: {
       minHeight: 36,
@@ -1519,6 +2133,20 @@ function createStyles(theme) {
       color: theme.colors.inputText,
       backgroundColor: theme.colors.inputBackground,
       flex: 1,
+    },
+    settingInputStandalone: {
+      borderWidth: 1,
+      borderColor: theme.colors.inputBorder,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      fontSize: 14,
+      color: theme.colors.inputText,
+      backgroundColor: theme.colors.inputBackground,
+      marginBottom: 12,
+    },
+    fullWidthActionBtn: {
+      alignSelf: "stretch",
     },
     historyText: {
       color: theme.colors.textMuted,

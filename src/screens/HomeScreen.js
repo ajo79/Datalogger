@@ -240,6 +240,12 @@ function getWifiInfo(item, { online = true } = {}, palette) {
   return map[strength] || { label: `Level ${strength}`, icon: "wifi-strength-1", color: palette.wifiFallback };
 }
 
+function stableDeviceSortKey(item) {
+  const name = String(item?.deviceName ?? item?.device_name ?? "").trim().toLowerCase();
+  const id = String(item?.deviceId ?? "").trim().toLowerCase();
+  return `${name || id}|${id}`;
+}
+
 /* ------------------------- MAIN COMPONENT ------------------------- */
 
 export default function HomeScreen(props) {
@@ -285,13 +291,9 @@ export default function HomeScreen(props) {
       ts: Number(item?.ts),
     }));
 
-    // Sorting logic:
-    // If timestamps exist, sort by newest first.
-    const hasTs = normalized.some((x) => Number.isFinite(x.ts));
-    if (hasTs) return normalized.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
-
-    // Fallback: sort alphabetically by deviceId
-    return normalized.sort((a, b) => String(a.deviceId).localeCompare(String(b.deviceId)));
+    return normalized.sort((a, b) =>
+      stableDeviceSortKey(a).localeCompare(stableDeviceSortKey(b))
+    );
   }, [rawItems]);
 
   const summary = useMemo(() => buildHealthSummary(items), [items]);
@@ -565,9 +567,10 @@ export default function HomeScreen(props) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionIconBtn} onPress={() => onPressShare(item)}>
-              <Image
-                source={require("../../assets/images/share.png")}
-                style={styles.icon}
+              <MaterialCommunityIcons
+                name="share-variant-outline"
+                size={24}
+                color={theme.colors.navActive}
               />
             </TouchableOpacity>
           </View>

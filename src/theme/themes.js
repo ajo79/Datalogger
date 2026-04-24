@@ -205,6 +205,57 @@ const softNeutral = Object.freeze({
   overlaySoft: "#1D2A34",
 });
 
+const blueWhite = Object.freeze({
+  canvas: "#F4F8FF",
+  canvasSoft: "#FAFCFF",
+  surface: "#FFFFFF",
+  surfaceElevated: "#FFFFFF",
+  surfaceAlt: "#EAF2FF",
+  surfaceStrong: "#D8E6F8",
+  textPrimary: "#0E2440",
+  textSecondary: "#2E4768",
+  textMuted: "#5A7393",
+  textInverse: "#FFFFFF",
+  border: "#D1DEEF",
+  borderStrong: "#8FA7C4",
+  borderFocus: "#3B86D1",
+  brand: "#1E5EA3",
+  brandDark: "#123B68",
+  brandSoft: "#E3EEFC",
+  accent: "#2D79C7",
+  accentSoft: "#E9F3FF",
+  info: "#2B8BCC",
+  success: "#1F9D62",
+  warning: "#C97808",
+  danger: "#D04545",
+  focusRing: "#3B86D1",
+  white: "#FFFFFF",
+  black: "#000000",
+  navActive: "#123B68",
+  navInactive: "#5F7897",
+  navIndicator: "#2D79C7",
+  buttonPrimary: "#1E5EA3",
+  buttonPrimaryText: "#FFFFFF",
+  buttonSecondary: "#2E4768",
+  buttonSecondaryText: "#FFFFFF",
+  buttonGhost: "#EAF2FF",
+  buttonGhostText: "#0E2440",
+  cardBackground: "#FFFFFF",
+  cardBorder: "#D1DEEF",
+  cardHeader: "#E9F3FF",
+  inputBackground: "#F0F6FF",
+  inputBorder: "#B8CAE0",
+  inputText: "#0E2440",
+  inputPlaceholder: "#6880A0",
+  tableRow: "#FFFFFF",
+  tableRowAlt: "#F6FAFF",
+  chipBackground: "#EAF2FF",
+  chipActiveBackground: "#D2E7FF",
+  chipText: "#2E4768",
+  chipActiveText: "#0F477A",
+  overlaySoft: "#0E2440",
+});
+
 const themes = Object.freeze({
   lightIndustrial: Object.freeze({
     id: "lightIndustrial",
@@ -229,6 +280,12 @@ const themes = Object.freeze({
     name: "Soft Neutral",
     description: "Low-fatigue neutral canvas with restrained accents.",
     colors: softNeutral,
+  }),
+  blueWhite: Object.freeze({
+    id: "blueWhite",
+    name: "Blue White",
+    description: "Professional navy and white palette with clean blue accents.",
+    colors: blueWhite,
   }),
 });
 
@@ -257,6 +314,12 @@ export const THEME_OPTIONS = Object.freeze([
     description: "Calm neutral palette for low visual fatigue.",
     swatches: [softNeutral.brand, softNeutral.accent, softNeutral.surface],
   }),
+  Object.freeze({
+    id: "blueWhite",
+    label: "Blue White",
+    description: "Professional navy and white palette with clean blue accents.",
+    swatches: [blueWhite.brand, blueWhite.accent, blueWhite.surface],
+  }),
 ]);
 
 export function isThemeId(value) {
@@ -273,4 +336,3 @@ export function getThemeColors(themeId) {
 }
 
 export default themes;
-

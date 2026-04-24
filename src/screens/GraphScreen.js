@@ -60,6 +60,8 @@ const getSevenDaysAgo = () => {
 const [startDate, setStartDate] = useState(getSevenDaysAgo());
 const [endDate, setEndDate] = useState(getToday());
 const [historyDeviceId, setHistoryDeviceId] = useState("");
+const [isDeviceDropdownOpen, setIsDeviceDropdownOpen] = useState(false);
+const [deviceOptions, setDeviceOptions] = useState([]);
 const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
 const [activeDateField, setActiveDateField] = useState("start"); // "start" | "end"
 
@@ -141,6 +143,40 @@ const handleManualDate = (field, text) => {
 };
 
   const normalizeId = (id) => String(id || "").trim().toLowerCase();
+
+  const upsertDeviceOptions = React.useCallback((rows = []) => {
+    setDeviceOptions((prev) => {
+      const byId = new Map();
+      (prev || []).forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (id) byId.set(id, item);
+      });
+
+      (rows || []).forEach((row) => {
+        const id = String(row?.deviceId || "").trim();
+        if (!id) return;
+        const name = String(row?.deviceName || row?.device_name || "").trim();
+        const prevItem = byId.get(id);
+        byId.set(id, {
+          id,
+          name: name || prevItem?.name || "",
+        });
+      });
+
+      return Array.from(byId.values()).sort((a, b) => {
+        const aKey = `${String(a.name || a.id).toLowerCase()}|${String(a.id).toLowerCase()}`;
+        const bKey = `${String(b.name || b.id).toLowerCase()}|${String(b.id).toLowerCase()}`;
+        return aKey.localeCompare(bKey);
+      });
+    });
+  }, []);
+
+  const selectedDeviceLabel = useMemo(() => {
+    if (!historyDeviceId) return "All devices";
+    const selected = deviceOptions.find((item) => item.id === historyDeviceId);
+    if (!selected) return historyDeviceId;
+    return selected.name ? `${selected.name} (${selected.id})` : selected.id;
+  }, [deviceOptions, historyDeviceId]);
 
   // --- Helpers ---
   const pad2 = (v) => String(v).padStart(2, '0');
@@ -286,6 +322,7 @@ const handleManualDate = (field, text) => {
         if (raw && Array.isArray(raw)) {
           // Items are already normalized in dataService.
           const processed = raw;
+          upsertDeviceOptions(processed);
           const nextOfflineStreak = {};
           const onlineItems = [];
           const offlineItems = [];
@@ -409,7 +446,19 @@ const handleManualDate = (field, text) => {
     const interval = setInterval(pollLive, LIVE_POLL_MS);
 
     return () => clearInterval(interval);
-  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [viewMode, upsertDeviceOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let active = true;
+    fetchRealTimeDataMonitor()
+      .then((rows) => {
+        if (active) upsertDeviceOptions(rows);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [upsertDeviceOptions]);
 
   // --- Historical Data Handling ---
 
@@ -595,6 +644,7 @@ const handleManualDate = (field, text) => {
         });
         try {
           const liveRows = await fetchRealTimeDataMonitor();
+          upsertDeviceOptions(liveRows);
           (liveRows || []).forEach((row) => {
             const id = String(row?.deviceId || "").trim();
             if (id) fallbackDeviceIds.add(id);
@@ -714,6 +764,18 @@ const handleManualDate = (field, text) => {
     setDeviceHistory(applyHistoryPage(historyFull, historyPage));
   }, [viewMode, historyFull, historyPage, historyPageCount]);
 
+  const visibleDeviceHistory = useMemo(() => {
+    const selectedId = normalizeId(historyDeviceId);
+    if (!selectedId) return deviceHistory;
+
+    return Object.entries(deviceHistory || {}).reduce((acc, [deviceId, history]) => {
+      if (normalizeId(deviceId) === selectedId) {
+        acc[deviceId] = history;
+      }
+      return acc;
+    }, {});
+  }, [deviceHistory, historyDeviceId]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ModernTopHeader
@@ -777,21 +839,68 @@ const handleManualDate = (field, text) => {
             style={[styles.label, styles.dateSecondaryLabel, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
             maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
           >
-            Device ID (Optional)
+            Device
           </Text>
-          <View style={styles.dateInputContainer}>
-            <TextInput
-              style={[styles.dateInput, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
-              value={historyDeviceId}
-              onChangeText={setHistoryDeviceId}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="All devices"
-              placeholderTextColor={theme.colors.inputPlaceholder}
-              maxLength={48}
+          <TouchableOpacity
+            style={styles.deviceDropdownTrigger}
+            onPress={() => setIsDeviceDropdownOpen((prev) => !prev)}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[styles.deviceDropdownText, { fontSize: ui.font(14, { min: 12, max: 15 }) }]}
+              numberOfLines={1}
+              ellipsizeMode="middle"
               maxFontSizeMultiplier={ui.maxFontSizeMultiplier}
+            >
+              {selectedDeviceLabel}
+            </Text>
+            <MaterialCommunityIcons
+              name={isDeviceDropdownOpen ? "chevron-up" : "chevron-down"}
+              size={22}
+              color={theme.colors.textSecondary}
             />
-          </View>
+          </TouchableOpacity>
+          {isDeviceDropdownOpen ? (
+            <View style={styles.deviceDropdownMenu}>
+              <ScrollView nestedScrollEnabled>
+                <TouchableOpacity
+                  style={[styles.deviceDropdownItem, !historyDeviceId && styles.deviceDropdownItemActive]}
+                  onPress={() => {
+                    setHistoryDeviceId("");
+                    setIsDeviceDropdownOpen(false);
+                  }}
+                >
+                  <Text style={styles.deviceDropdownItemTitle}>All devices</Text>
+                  <Text style={styles.deviceDropdownItemSub}>Show every device in the selected date range</Text>
+                </TouchableOpacity>
+                {deviceOptions.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.deviceDropdownItem,
+                      historyDeviceId === item.id && styles.deviceDropdownItemActive,
+                    ]}
+                    onPress={() => {
+                      setHistoryDeviceId(item.id);
+                      setIsDeviceDropdownOpen(false);
+                    }}
+                  >
+                    <Text style={styles.deviceDropdownItemTitle} numberOfLines={1}>
+                      {item.name || "Unnamed device"}
+                    </Text>
+                    <Text style={styles.deviceDropdownItemSub} numberOfLines={1}>
+                      {item.id}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {!deviceOptions.length ? (
+                  <View style={styles.deviceDropdownItem}>
+                    <Text style={styles.deviceDropdownItemSub}>No devices loaded yet.</Text>
+                  </View>
+                ) : null}
+              </ScrollView>
+            </View>
+          ) : null}
         </View>
 
         {/* --- Mode Selector --- */}
@@ -902,7 +1011,7 @@ const handleManualDate = (field, text) => {
             </View>
           )}
         </View>
-        {!isLoading && Object.keys(deviceHistory).length === 0 && !liveNotice && (
+        {!isLoading && Object.keys(visibleDeviceHistory).length === 0 && !liveNotice && (
           <Text style={styles.waitingText}>
             {viewMode === 'history'
               ? "No data for selected range."
@@ -910,8 +1019,8 @@ const handleManualDate = (field, text) => {
           </Text>
         )}
 
-        {Object.keys(deviceHistory).map((deviceId) => {
-          const history = deviceHistory[deviceId];
+        {Object.keys(visibleDeviceHistory).map((deviceId) => {
+          const history = visibleDeviceHistory[deviceId];
           // Ensure we have at least one valid data point to avoid crash
           if (!(history?.labels?.length || history?.timestamps?.length)) return null;
 
@@ -1203,6 +1312,52 @@ function createStyles(theme) {
     fontSize: 14,
     color: colors.inputText,
     paddingVertical: 0,
+  },
+  deviceDropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    marginTop: 5,
+    width: '100%',
+    height: 40,
+    backgroundColor: colors.inputBackground,
+  },
+  deviceDropdownText: {
+    flex: 1,
+    color: colors.inputText,
+    marginRight: 8,
+  },
+  deviceDropdownMenu: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceElevated,
+    maxHeight: 220,
+    overflow: 'hidden',
+  },
+  deviceDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  deviceDropdownItemActive: {
+    backgroundColor: colors.chipActiveBackground,
+  },
+  deviceDropdownItemTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  deviceDropdownItemSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
   calendarIcon: {
     width: 20,

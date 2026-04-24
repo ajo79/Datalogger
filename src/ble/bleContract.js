@@ -24,6 +24,10 @@ export const BLE_CHAR_UUIDS = {
   emailSender: withSuffix("00f8"),
   emailAppPassword: withSuffix("00f7"),
   emailRecipient: withSuffix("00f6"),
+  // Shift schedule configuration (runtime settings)
+  shift1Time: withSuffix("00f4"),
+  shift2Time: withSuffix("00f3"),
+  shift3Time: withSuffix("00f2"),
   allParams: withSuffix("00ff"),
   status: withSuffix("00fe"),
   liveTelemetry: withSuffix("00fd"),
