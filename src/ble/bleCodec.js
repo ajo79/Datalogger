@@ -127,9 +127,28 @@ export function decodeFloatParam(base64) {
   return decodeFloat32LE(bytes, 0);
 }
 
+export function encodeBuzzerOnTime(seconds) {
+  if (typeof seconds === "string" && seconds.trim() === "") {
+    throw new Error("Buzzer on-time must be an integer from 0 to 100 seconds.");
+  }
+  const value = Number(seconds);
+  if (!Number.isInteger(value) || value < 0 || value > 100) {
+    throw new Error("Buzzer on-time must be an integer from 0 to 100 seconds.");
+  }
+  return bytesToBase64(encodeU16LE(value));
+}
+
+export function decodeBuzzerOnTime(base64) {
+  const bytes = base64ToBytes(base64);
+  if (bytes.length !== 2) throw new Error("Buzzer on-time payload must be 2 bytes.");
+  return decodeU16LE(bytes, 0);
+}
+
 export function decodeAllParamsSnapshot(base64) {
   const bytes = base64ToBytes(base64);
-  if (bytes.length < 40) throw new Error("All params payload must be 40 bytes.");
+  if (bytes.length !== 40 && bytes.length !== 42) {
+    throw new Error(`All params payload must be 40 or 42 bytes; received ${bytes.length}.`);
+  }
 
   return {
     param1Epoch: Number(decodeU64LE(bytes, 0)),
@@ -141,6 +160,7 @@ export function decodeAllParamsSnapshot(base64) {
     param7: decodeFloat32LE(bytes, 28),
     param8: decodeFloat32LE(bytes, 32),
     param9: decodeFloat32LE(bytes, 36),
+    param10: bytes.length === 42 ? decodeU16LE(bytes, 40) : 10,
   };
 }
 

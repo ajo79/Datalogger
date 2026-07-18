@@ -23,6 +23,7 @@ import { ModernBottomNav, ModernTopHeader } from "../components/ui";
 const FACTORY_UNLOCK_PASSWORD = "blackstar";
 const SCAN_TIMEOUT_MS = 12000;
 const MASKED_EMAIL_PASSWORD = "********";
+const REQUESTED_BLE_MTU = 64;
 
 function getBleDeviceDisplayName(device) {
   const name = device?.name || device?.localName || BLE_DEVICE_NAME;
@@ -262,7 +263,15 @@ export default function FactorySettingsScreen({ navigation }) {
         }
 
         const connected = await device.connect();
-        const ready = await connected.discoverAllServicesAndCharacteristics();
+        let ready = await connected.discoverAllServicesAndCharacteristics();
+        if (Platform.OS === "android") {
+          try {
+            ready = await ready.requestMTU(REQUESTED_BLE_MTU);
+            pushStatus(`BLE MTU ${ready.mtu || REQUESTED_BLE_MTU}`);
+          } catch (mtuError) {
+            pushStatus(`MTU negotiation failed (${mtuError?.message || "unknown error"})`);
+          }
+        }
         connectedDeviceRef.current = ready;
         setSelectedDeviceId(ready.id);
         setDeviceLabel(getBleDeviceDisplayName(ready));

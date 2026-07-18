@@ -20,14 +20,20 @@ import {
   BLE_DEVICE_NAME,
   BLE_SERVICE_UUID,
   PARAM_CHAR_BY_ID,
+  PARAM_IDS,
   STATUS_CODE_TEXT,
 } from "../ble/bleContract";
 import {
   decodeAllParamsSnapshot,
+  decodeBuzzerOnTime,
+  decodeFloatParam,
+  decodeParam1Epoch,
   decodeStatus,
   decodeTelemetry,
+  decodeThresholdPair,
   decodeUtf8Text,
   encodeFloatParam,
+  encodeBuzzerOnTime,
   encodeParam1Epoch,
   encodeThresholdPair,
   encodeUtf8Text,
@@ -49,6 +55,7 @@ const defaultForm = {
   param7: "",
   param8: "",
   param9: "",
+  param10: "10",
 };
 
 const thresholdDefs = [
@@ -64,6 +71,33 @@ const multiplierDefs = [
   { id: 8, title: "Multiplier 3", key: "param8" },
   { id: 9, title: "Multiplier 4", key: "param9" },
 ];
+
+const REQUESTED_BLE_MTU = 64;
+
+const normalizeUuid = (uuid) => String(uuid || "").toLowerCase();
+
+function formatBleError(error, fallback) {
+  const details = [
+    error?.message,
+    error?.reason,
+    error?.errorCode != null ? `Code: ${error.errorCode}` : null,
+    error?.attErrorCode != null ? `ATT: ${error.attErrorCode}` : null,
+    error?.androidErrorCode != null ? `Android: ${error.androidErrorCode}` : null,
+  ].filter(Boolean);
+  return [...new Set(details)].join("\n") || fallback;
+}
+
+function buildCharacteristicCapabilities(characteristics) {
+  return (characteristics || []).reduce((result, characteristic) => {
+    result[normalizeUuid(characteristic.uuid)] = {
+      readable: !!characteristic.isReadable,
+      writable:
+        !!characteristic.isWritableWithResponse || !!characteristic.isWritableWithoutResponse,
+      notifiable: !!characteristic.isNotifiable || !!characteristic.isIndicatable,
+    };
+    return result;
+  }, {});
+}
 
 const defaultShiftForm = {
   shift1Start: "",
@@ -386,6 +420,7 @@ export default function SettingsScreen({ navigation }) {
   const connectingRef = useRef(false);
   const disconnectingRef = useRef(false);
   const isUnmountingRef = useRef(false);
+  const characteristicCapabilitiesRef = useRef({});
 
   const [deviceLabel, setDeviceLabel] = useState("Disconnected");
   const [isScanning, setIsScanning] = useState(false);
@@ -416,6 +451,7 @@ export default function SettingsScreen({ navigation }) {
   const [busyShiftScheduleAction, setBusyShiftScheduleAction] = useState(null);
   const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
   const [activeShiftField, setActiveShiftField] = useState(null);
+  const [characteristicCapabilities, setCharacteristicCapabilities] = useState({});
 
   const telemetryView = (() => {
     if (
@@ -430,6 +466,33 @@ export default function SettingsScreen({ navigation }) {
   })();
 
   const isConnected = !!connectedDeviceRef.current;
+  const hasCapability = useCallback((uuid, capability) => {
+    return !!characteristicCapabilitiesRef.current[normalizeUuid(uuid)]?.[capability];
+  }, []);
+  const requireCapability = useCallback(
+    (uuid, capability, label) => {
+      if (!hasCapability(uuid, capability)) {
+        throw new Error(`${label} is not supported by the connected firmware.`);
+      }
+    },
+    [hasCapability]
+  );
+
+  const supportsWifiCredentials = [BLE_CHAR_UUIDS.wifiSsid, BLE_CHAR_UUIDS.wifiPassword].every(
+    (uuid) => characteristicCapabilities[normalizeUuid(uuid)]?.writable
+  );
+  const supportsShiftSchedule = shiftScheduleDefs.every((cfg) => {
+    const capability = characteristicCapabilities[normalizeUuid(BLE_CHAR_UUIDS[cfg.charUuidKey])];
+    return capability?.readable && capability?.writable;
+  });
+  const supportsDeviceName = (() => {
+    const capability = characteristicCapabilities[normalizeUuid(BLE_CHAR_UUIDS.deviceName)];
+    return capability?.readable && capability?.writable;
+  })();
+  const supportsRecipientEmail = (() => {
+    const capability = characteristicCapabilities[normalizeUuid(BLE_CHAR_UUIDS.emailRecipient)];
+    return capability?.readable && capability?.writable;
+  })();
 
   const clearScanTimer = useCallback(() => {
     if (scanTimeoutRef.current) {
@@ -486,6 +549,7 @@ export default function SettingsScreen({ navigation }) {
       param7: toInputFloat(snapshot.param7),
       param8: toInputFloat(snapshot.param8),
       param9: toInputFloat(snapshot.param9),
+      param10: String(snapshot.param10 ?? 10),
     });
   }, []);
 
@@ -510,7 +574,9 @@ export default function SettingsScreen({ navigation }) {
   const clearConnectionState = useCallback((options = {}) => {
     const { removeDisconnectListener = true, removeSubscriptions = true } = options;
     connectedDeviceRef.current = null;
+    characteristicCapabilitiesRef.current = {};
     if (!isUnmountingRef.current) {
+      setCharacteristicCapabilities({});
       setDeviceLabel("Disconnected");
       setIsConnecting(false);
       setIsDisconnecting(false);
@@ -546,8 +612,10 @@ export default function SettingsScreen({ navigation }) {
   const monitorBleNotifications = useCallback(
     (device) => {
       clearSubscriptions();
+      const subscriptions = [];
 
-      const statusSub = device.monitorCharacteristicForService(
+      if (hasCapability(BLE_CHAR_UUIDS.status, "notifiable")) {
+        subscriptions.push(device.monitorCharacteristicForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.status,
         (error, characteristic) => {
@@ -560,9 +628,11 @@ export default function SettingsScreen({ navigation }) {
           )}`;
           pushStatusLine(line);
         }
-      );
+        ));
+      }
 
-      const allParamSub = device.monitorCharacteristicForService(
+      if (hasCapability(BLE_CHAR_UUIDS.allParams, "notifiable")) {
+        subscriptions.push(device.monitorCharacteristicForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.allParams,
         (error, characteristic) => {
@@ -575,9 +645,11 @@ export default function SettingsScreen({ navigation }) {
             pushStatusLine(`Snapshot decode error: ${e?.message || "unknown error"}`);
           }
         }
-      );
+        ));
+      }
 
-      const telemetrySub = device.monitorCharacteristicForService(
+      if (hasCapability(BLE_CHAR_UUIDS.liveTelemetry, "notifiable")) {
+        subscriptions.push(device.monitorCharacteristicForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.liveTelemetry,
         (error, characteristic) => {
@@ -588,11 +660,12 @@ export default function SettingsScreen({ navigation }) {
           if (!parsed) return;
           setLiveTelemetry(buildTelemetryView(parsed));
         }
-      );
+        ));
+      }
 
-      notifSubsRef.current = [statusSub, allParamSub, telemetrySub];
+      notifSubsRef.current = subscriptions;
     },
-    [applySnapshotToForm, clearSubscriptions, pushStatusLine]
+    [applySnapshotToForm, clearSubscriptions, hasCapability, pushStatusLine]
   );
 
   const readSnapshot = useCallback(async () => {
@@ -604,6 +677,7 @@ export default function SettingsScreen({ navigation }) {
       return;
     }
     try {
+      requireCapability(BLE_CHAR_UUIDS.allParams, "readable", "Parameter snapshot read");
       const characteristic = await device.readCharacteristicForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.allParams
@@ -611,22 +685,58 @@ export default function SettingsScreen({ navigation }) {
       if (!characteristic?.value) {
         throw new Error("No snapshot payload received.");
       }
-      const snapshot = decodeAllParamsSnapshot(characteristic.value);
+      let snapshot;
+      try {
+        snapshot = decodeAllParamsSnapshot(characteristic.value);
+      } catch (snapshotError) {
+        pushStatusLine(
+          `${new Date().toLocaleTimeString()} - Consolidated snapshot unavailable; reading parameters individually`
+        );
+
+        const values = {};
+        for (const paramId of PARAM_IDS) {
+          const paramCharacteristic = await device.readCharacteristicForService(
+            BLE_SERVICE_UUID,
+            PARAM_CHAR_BY_ID[paramId]
+          );
+          if (!paramCharacteristic?.value) {
+            throw new Error(`No payload received for Param ${paramId}.`);
+          }
+          values[paramId] = paramCharacteristic.value;
+        }
+
+        snapshot = {
+          param1Epoch: decodeParam1Epoch(values[1]),
+          param2: decodeThresholdPair(values[2]),
+          param3: decodeThresholdPair(values[3]),
+          param4: decodeThresholdPair(values[4]),
+          param5: decodeThresholdPair(values[5]),
+          param6: decodeFloatParam(values[6]),
+          param7: decodeFloatParam(values[7]),
+          param8: decodeFloatParam(values[8]),
+          param9: decodeFloatParam(values[9]),
+          param10: decodeBuzzerOnTime(values[10]),
+        };
+        pushStatusLine(
+          `${new Date().toLocaleTimeString()} - Individual parameter fallback complete (${snapshotError.message})`
+        );
+      }
       applySnapshotToForm(snapshot);
       pushStatusLine(`${new Date().toLocaleTimeString()} - Snapshot read complete`);
     } catch (e) {
       if (!disconnectingRef.current && !isUnmountingRef.current) {
-        Alert.alert("Read failed", e?.message || "Unable to read snapshot.");
+        Alert.alert("Read failed", formatBleError(e, "Unable to read snapshot."));
       }
     }
-  }, [applySnapshotToForm, pushStatusLine]);
+  }, [applySnapshotToForm, pushStatusLine, requireCapability]);
 
   const readBleTextCharacteristic = useCallback(async (charUuid) => {
     const device = connectedDeviceRef.current;
     if (!device) throw new Error("Connect to BIOT BLE device first.");
+    requireCapability(charUuid, "readable", "This setting");
     const characteristic = await device.readCharacteristicForService(BLE_SERVICE_UUID, charUuid);
     return decodeUtf8Text(characteristic?.value || "").trim();
-  }, []);
+  }, [requireCapability]);
 
   const sendWifiCredentials = useCallback(async () => {
     const device = connectedDeviceRef.current;
@@ -644,6 +754,8 @@ export default function SettingsScreen({ navigation }) {
 
     try {
       setBusyWifiAction(true);
+      requireCapability(BLE_CHAR_UUIDS.wifiSsid, "writable", "Wi-Fi SSID update");
+      requireCapability(BLE_CHAR_UUIDS.wifiPassword, "writable", "Wi-Fi password update");
       await device.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.wifiSsid,
@@ -657,13 +769,13 @@ export default function SettingsScreen({ navigation }) {
       pushStatusLine(`${new Date().toLocaleTimeString()} - Wi-Fi credentials sent to device`);
       Alert.alert("Success", "Wi-Fi credentials sent to ESP32.");
     } catch (e) {
-      Alert.alert("Send failed", e?.message || "Unable to send Wi-Fi credentials.");
+      Alert.alert("Send failed", formatBleError(e, "Unable to send Wi-Fi credentials."));
     } finally {
       if (!isUnmountingRef.current) {
         setBusyWifiAction(false);
       }
     }
-  }, [pushStatusLine, wifiPassword, wifiSsid]);
+  }, [pushStatusLine, requireCapability, wifiPassword, wifiSsid]);
 
   const readShiftSchedule = useCallback(
     async ({ silent = false } = {}) => {
@@ -693,7 +805,7 @@ export default function SettingsScreen({ navigation }) {
         return true;
       } catch (e) {
         if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
-          Alert.alert("Read failed", e?.message || "Unable to read shift schedule.");
+          Alert.alert("Read failed", formatBleError(e, "Unable to read shift schedule."));
         }
         return false;
       } finally {
@@ -786,6 +898,11 @@ export default function SettingsScreen({ navigation }) {
 
       const orderedWrites = [...windows].sort((a, b) => b.id - a.id);
       for (const window of orderedWrites) {
+        requireCapability(
+          BLE_CHAR_UUIDS[window.charUuidKey],
+          "writable",
+          `${window.title} update`
+        );
         const payload = formatShiftPayload24h(window.startMin, window.endMin);
         try {
           await device.writeCharacteristicWithResponseForService(
@@ -807,13 +924,13 @@ export default function SettingsScreen({ navigation }) {
       setShiftFieldErrors(buildEmptyShiftFieldErrors());
       pushStatusLine(`${new Date().toLocaleTimeString()} - Shift schedule saved`);
     } catch (e) {
-      Alert.alert("Write failed", e?.message || "Unable to update shift schedule.");
+      Alert.alert("Write failed", formatBleError(e, "Unable to update shift schedule."));
     } finally {
       if (!isUnmountingRef.current) {
         setBusyShiftScheduleAction(null);
       }
     }
-  }, [normalizeShiftFormValues, pushStatusLine, shiftForm]);
+  }, [normalizeShiftFormValues, pushStatusLine, requireCapability, shiftForm]);
 
   const readDeviceName = useCallback(
     async ({ silent = false } = {}) => {
@@ -835,7 +952,7 @@ export default function SettingsScreen({ navigation }) {
         return true;
       } catch (e) {
         if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
-          Alert.alert("Read failed", e?.message || "Unable to read device name.");
+          Alert.alert("Read failed", formatBleError(e, "Unable to read device name."));
         }
         return false;
       } finally {
@@ -869,6 +986,7 @@ export default function SettingsScreen({ navigation }) {
 
     try {
       setBusyDeviceNameAction("write");
+      requireCapability(BLE_CHAR_UUIDS.deviceName, "writable", "Device name update");
       await device.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.deviceName,
@@ -877,13 +995,13 @@ export default function SettingsScreen({ navigation }) {
       setDeviceNameValue(value);
       pushStatusLine(`${new Date().toLocaleTimeString()} - Device name updated`);
     } catch (e) {
-      Alert.alert("Write failed", e?.message || "Unable to update device name.");
+      Alert.alert("Write failed", formatBleError(e, "Unable to update device name."));
     } finally {
       if (!isUnmountingRef.current) {
         setBusyDeviceNameAction(null);
       }
     }
-  }, [deviceNameValue, pushStatusLine]);
+  }, [deviceNameValue, pushStatusLine, requireCapability]);
 
   const readRecipientEmail = useCallback(
     async ({ silent = false } = {}) => {
@@ -905,7 +1023,7 @@ export default function SettingsScreen({ navigation }) {
         return true;
       } catch (e) {
         if (!silent && !disconnectingRef.current && !isUnmountingRef.current) {
-          Alert.alert("Read failed", e?.message || "Unable to read receiver email.");
+          Alert.alert("Read failed", formatBleError(e, "Unable to read receiver email."));
         }
         return false;
       } finally {
@@ -932,6 +1050,7 @@ export default function SettingsScreen({ navigation }) {
 
     try {
       setBusyRecipientAction("write");
+      requireCapability(BLE_CHAR_UUIDS.emailRecipient, "writable", "Receiver email update");
       await device.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
         BLE_CHAR_UUIDS.emailRecipient,
@@ -940,13 +1059,13 @@ export default function SettingsScreen({ navigation }) {
       setRecipientEmail(value);
       pushStatusLine(`${new Date().toLocaleTimeString()} - Updated receiver email`);
     } catch (e) {
-      Alert.alert("Write failed", e?.message || "Unable to update receiver email.");
+      Alert.alert("Write failed", formatBleError(e, "Unable to update receiver email."));
     } finally {
       if (!isUnmountingRef.current) {
         setBusyRecipientAction(null);
       }
     }
-  }, [pushStatusLine, recipientEmail]);
+  }, [pushStatusLine, recipientEmail, requireCapability]);
 
   const connectToDevice = useCallback(
     async (device) => {
@@ -964,7 +1083,23 @@ export default function SettingsScreen({ navigation }) {
         }
 
         const connected = await device.connect();
-        const ready = await connected.discoverAllServicesAndCharacteristics();
+        let ready = await connected.discoverAllServicesAndCharacteristics();
+        const discoveredCharacteristics = await ready.characteristicsForService(BLE_SERVICE_UUID);
+        const capabilities = buildCharacteristicCapabilities(discoveredCharacteristics);
+        characteristicCapabilitiesRef.current = capabilities;
+        setCharacteristicCapabilities(capabilities);
+        if (Platform.OS === "android") {
+          try {
+            ready = await ready.requestMTU(REQUESTED_BLE_MTU);
+            pushStatusLine(
+              `${new Date().toLocaleTimeString()} - BLE MTU ${ready.mtu || REQUESTED_BLE_MTU}`
+            );
+          } catch (mtuError) {
+            pushStatusLine(
+              `${new Date().toLocaleTimeString()} - MTU negotiation failed; using read fallback (${mtuError?.message || "unknown error"})`
+            );
+          }
+        }
         if (disconnectingRef.current || isUnmountingRef.current) {
           await managerRef.current.cancelDeviceConnection(ready.id).catch(() => {});
           return;
@@ -993,7 +1128,7 @@ export default function SettingsScreen({ navigation }) {
         await readShiftSchedule({ silent: true });
       } catch (e) {
         if (!disconnectingRef.current && !isUnmountingRef.current) {
-          Alert.alert("BLE connect failed", e?.message || "Unable to connect.");
+          Alert.alert("BLE connect failed", formatBleError(e, "Unable to connect."));
         }
         clearConnectionState({ removeSubscriptions: false });
       } finally {
@@ -1036,7 +1171,7 @@ export default function SettingsScreen({ navigation }) {
     managerRef.current.startDeviceScan(null, { allowDuplicates: false }, (error, scanned) => {
       if (error) {
         stopScan();
-        Alert.alert("Scan error", error.message || "Unable to scan.");
+        Alert.alert("Scan error", formatBleError(error, "Unable to scan."));
         return;
       }
       if (!scanned) return;
@@ -1205,12 +1340,13 @@ export default function SettingsScreen({ navigation }) {
     if (!device) throw new Error("Connect to BIOT BLE device first.");
     const charUuid = PARAM_CHAR_BY_ID[paramId];
     if (!charUuid) throw new Error(`Unknown parameter ${paramId}.`);
+    requireCapability(charUuid, "writable", `Parameter ${paramId} update`);
     await device.writeCharacteristicWithResponseForService(
       BLE_SERVICE_UUID,
       charUuid,
       base64Payload
     );
-  }, []);
+  }, [requireCapability]);
 
   const parseRequiredInt = (value, label) => {
     if (value === "") throw new Error(`${label} is required.`);
@@ -1257,6 +1393,11 @@ export default function SettingsScreen({ navigation }) {
       return encodeFloatParam(value);
     }
 
+    if (paramId === 10) {
+      const seconds = parseRequiredInt(sourceForm.param10, "Buzzer on-time");
+      return encodeBuzzerOnTime(seconds);
+    }
+
     throw new Error(`Unsupported parameter ${paramId}.`);
   }, []);
 
@@ -1269,7 +1410,7 @@ export default function SettingsScreen({ navigation }) {
         await writeParamBase64(paramId, payload);
         pushStatusLine(`${new Date().toLocaleTimeString()} - Wrote Param ${paramId}`);
       } catch (e) {
-        Alert.alert("Write failed", e?.message || "Unable to write parameter.");
+        Alert.alert("Write failed", formatBleError(e, "Unable to write parameter."));
       } finally {
         setBusyParam(null);
       }
@@ -1282,14 +1423,14 @@ export default function SettingsScreen({ navigation }) {
     const formToWrite = { ...form, param1Epoch: String(nowEpoch) };
     try {
       setBusyParam("all");
-      for (let id = 1; id <= 9; id += 1) {
+      for (const id of PARAM_IDS) {
         const payload = buildParamPayload(id, formToWrite);
         await writeParamBase64(id, payload);
         pushStatusLine(`${new Date().toLocaleTimeString()} - Wrote Param ${id}`);
       }
       await readSnapshot();
     } catch (e) {
-      Alert.alert("Write failed", e?.message || "Unable to write all parameters.");
+      Alert.alert("Write failed", formatBleError(e, "Unable to write all parameters."));
     } finally {
       setBusyParam(null);
     }
@@ -1463,7 +1604,7 @@ export default function SettingsScreen({ navigation }) {
           </View>
         </View>
 
-        <View style={styles.settingPanel}>
+        {supportsWifiCredentials ? <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelHeaderText}>Wi-Fi Credentials</Text>
           </View>
@@ -1502,7 +1643,7 @@ export default function SettingsScreen({ navigation }) {
             </TouchableOpacity>
             <Text style={styles.infoLine}>Writes SSID and password to ESP32 using BLE characteristics.</Text>
           </View>
-        </View>
+        </View> : null}
 
         <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
@@ -1605,6 +1746,38 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
+            <Text style={styles.panelHeaderText}>Buzzer On-Time</Text>
+          </View>
+          <View style={styles.panelBody}>
+            <Text style={styles.infoLine}>
+              Seconds (0-100). Set 0 to keep the buzzer on until the alarm is acknowledged.
+            </Text>
+            <View style={styles.multiplierRow}>
+              <TextInput
+                style={styles.settingInputWide}
+                value={form.param10}
+                onChangeText={(txt) => setField("param10", txt)}
+                placeholder="10"
+                placeholderTextColor={theme.colors.inputPlaceholder}
+                keyboardType="numeric"
+              />
+              <TouchableOpacity
+                style={[styles.setBtn, styles.primaryBtn]}
+                onPress={() => writeSingleParam(10)}
+                disabled={!isConnected || busyParam === 10 || isDisconnecting}
+              >
+                {busyParam === 10 ? (
+                  <ActivityIndicator color={theme.colors.buttonPrimaryText} />
+                ) : (
+                  <Text style={styles.setBtnText}>SET</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {supportsShiftSchedule ? <View style={styles.settingPanel}>
+          <View style={styles.panelHeader}>
             <Text style={styles.panelHeaderText}>Shift Schedule</Text>
           </View>
           <View style={styles.panelBody}>
@@ -1703,9 +1876,9 @@ export default function SettingsScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </View> : null}
 
-        <View style={styles.settingPanel}>
+        {supportsDeviceName ? <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelHeaderText}>Device Identity</Text>
           </View>
@@ -1748,9 +1921,9 @@ export default function SettingsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </View> : null}
 
-        <View style={styles.settingPanel}>
+        {supportsRecipientEmail ? <View style={styles.settingPanel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelHeaderText}>Email Alert Config</Text>
           </View>
@@ -1794,7 +1967,7 @@ export default function SettingsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </View> : null}
 
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>BLE Activity</Text>

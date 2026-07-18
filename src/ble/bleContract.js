@@ -15,6 +15,7 @@ export const BLE_CHAR_UUIDS = {
   param7: withSuffix("0007"),
   param8: withSuffix("0008"),
   param9: withSuffix("0009"),
+  param10: withSuffix("000a"),
   deviceName: withSuffix("00f5"),
   deviceId: withSuffix("00f9"),
   // Factory credential writes (firmware must expose matching characteristics)
@@ -43,7 +44,10 @@ export const PARAM_CHAR_BY_ID = {
   7: BLE_CHAR_UUIDS.param7,
   8: BLE_CHAR_UUIDS.param8,
   9: BLE_CHAR_UUIDS.param9,
+  10: BLE_CHAR_UUIDS.param10,
 };
+
+export const PARAM_IDS = Object.freeze(Object.keys(PARAM_CHAR_BY_ID).map(Number));
 
 export const STATUS_CODE_TEXT = {
   0: "OK",
